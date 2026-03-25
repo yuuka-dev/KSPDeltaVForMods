@@ -719,3 +719,91 @@ class TestParserRegression:
 
         expected = 1.1 * G0 * 670_000.0**2
         assert math.isclose(sanctar.mu, expected, rel_tol=1e-9)  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# 6. isHomeWorld and referenceBody parsing tests
+# ---------------------------------------------------------------------------
+
+
+class TestParseHomeWorldAndReferenceBody:
+    """Tests for isHomeWorld and referenceBody extraction from Body nodes.
+
+    isHomeWorld および referenceBody のパース処理テスト。
+    """
+
+    def _make_body_source(
+        self,
+        *,
+        properties_extra: str = "",
+        orbit_extra: str = "",
+        include_orbit: bool = True,
+    ) -> str:
+        """Build a minimal Body config string with optional additions."""
+        orbit_block = ""
+        if include_orbit:
+            orbit_block = (
+                f"    Orbit\n    {{\n        semiMajorAxis = 13116000574\n{orbit_extra}    }}\n"
+            )
+        return (
+            "Body\n{\n"
+            "    name = TestBody\n"
+            "    Properties\n    {\n"
+            "        radius = 600000\n"
+            "        geeASL = 1.0\n"
+            f"{properties_extra}"
+            "    }\n"
+            f"{orbit_block}"
+            "}\n"
+        )
+
+    def test_is_home_world_true(self) -> None:
+        """isHomeWorld = True in Properties sets is_home_world to True."""
+        source = self._make_body_source(properties_extra="        isHomeWorld = True\n")
+        bodies = parse_bodies(source)
+        assert len(bodies) == 1
+        assert bodies[0].is_home_world is True
+
+    def test_is_home_world_false_when_missing(self) -> None:
+        """Absent isHomeWorld key defaults is_home_world to False."""
+        source = self._make_body_source()
+        bodies = parse_bodies(source)
+        assert len(bodies) == 1
+        assert bodies[0].is_home_world is False
+
+    def test_is_home_world_explicit_false(self) -> None:
+        """isHomeWorld = False explicitly sets is_home_world to False."""
+        source = self._make_body_source(properties_extra="        isHomeWorld = False\n")
+        bodies = parse_bodies(source)
+        assert len(bodies) == 1
+        assert bodies[0].is_home_world is False
+
+    def test_reference_body_from_orbit(self) -> None:
+        """referenceBody in Orbit node is captured in reference_body_name."""
+        source = self._make_body_source(orbit_extra="        referenceBody = Sun\n")
+        bodies = parse_bodies(source)
+        assert len(bodies) == 1
+        assert bodies[0].reference_body_name == "Sun"
+
+    def test_reference_body_empty_when_no_orbit(self) -> None:
+        """reference_body_name is empty string when there is no Orbit node."""
+        source = self._make_body_source(include_orbit=False)
+        bodies = parse_bodies(source)
+        assert len(bodies) == 1
+        assert bodies[0].reference_body_name == ""
+
+    def test_sanctar_cfg_is_home_world(self) -> None:
+        """Sanctar.cfg has isHomeWorld = True in Properties."""
+        source = SANCTAR_CFG.read_text(encoding="utf-8")
+        bodies = parse_bodies(source)
+        assert len(bodies) >= 1
+        sanctar = bodies[0]
+        assert sanctar.is_home_world is True
+
+    def test_sanctar_cfg_reference_body(self) -> None:
+        """Sanctar.cfg Orbit has referenceBody = Sun."""
+        source = SANCTAR_CFG.read_text(encoding="utf-8")
+        bodies = parse_bodies(source)
+        assert len(bodies) >= 1
+        sanctar = bodies[0]
+        assert sanctar.reference_body_name == "Sun"

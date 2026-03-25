@@ -533,6 +533,18 @@ def _extract_body(body_node: ConfigNode) -> CelestialBody | None:
     )
     display_name = _resolve_display_name(properties, name)
 
+    is_home_world = _parse_bool(
+        properties.get_value("isHomeWorld") if properties else None,
+        default=False,
+    )
+
+    orbit_node = body_node.get_child("Orbit")
+    reference_body_name = ""
+    if orbit_node is not None:
+        raw_ref = orbit_node.get_value("referenceBody")
+        if raw_ref is not None:
+            reference_body_name = raw_ref.strip()
+
     try:
         atmosphere = _extract_atmosphere(body_node)
     except Exception as exc:
@@ -557,6 +569,8 @@ def _extract_body(body_node: ConfigNode) -> CelestialBody | None:
             orbit=orbit,
             rotational_period=rotational_period,
             display_name=display_name,
+            is_home_world=is_home_world,
+            reference_body_name=reference_body_name,
         )
     except Exception as exc:
         logger.warning("Failed to construct CelestialBody '%s': %s", name, exc)
