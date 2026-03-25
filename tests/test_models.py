@@ -107,6 +107,64 @@ class TestCelestialBody:
         )
         assert hash(a) == hash(b)
 
+    def test_is_home_world_default_false(self) -> None:
+        """is_home_world defaults to False when not provided."""
+        body = CelestialBody(
+            name="Test",
+            radius=600_000.0,
+            gee_asl=1.0,
+            has_ocean=False,
+            atmosphere=None,
+            orbit=None,
+            rotational_period=21600.0,
+            display_name="Test",
+        )
+        assert body.is_home_world is False
+
+    def test_is_home_world_set_true(self) -> None:
+        """is_home_world can be set to True explicitly."""
+        body = CelestialBody(
+            name="Kerbin",
+            radius=600_000.0,
+            gee_asl=1.0,
+            has_ocean=True,
+            atmosphere=None,
+            orbit=None,
+            rotational_period=21600.0,
+            display_name="Kerbin",
+            is_home_world=True,
+        )
+        assert body.is_home_world is True
+
+    def test_reference_body_name_default_empty(self) -> None:
+        """reference_body_name defaults to empty string when not provided."""
+        body = CelestialBody(
+            name="Sun",
+            radius=261_600_000.0,
+            gee_asl=4.0,
+            has_ocean=False,
+            atmosphere=None,
+            orbit=None,
+            rotational_period=432_000.0,
+            display_name="Sun",
+        )
+        assert body.reference_body_name == ""
+
+    def test_reference_body_name_set(self) -> None:
+        """reference_body_name can be set to a non-empty string."""
+        body = CelestialBody(
+            name="Kerbin",
+            radius=600_000.0,
+            gee_asl=1.0,
+            has_ocean=True,
+            atmosphere=None,
+            orbit=None,
+            rotational_period=21600.0,
+            display_name="Kerbin",
+            reference_body_name="Sun",
+        )
+        assert body.reference_body_name == "Sun"
+
 
 class TestHermiteInterp:
     def test_single_key_returns_value(self) -> None:
