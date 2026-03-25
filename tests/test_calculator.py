@@ -11,17 +11,24 @@ from pathlib import Path
 import pytest
 
 from kopdeltav.calculator import (
+    DvStep,
     calculate_hohmann,
     calculate_launch,
     calculate_tsiolkovsky,
     circular_velocity,
+    compute_route,
     density_at_altitude,
+    escape_dv_from_low_orbit,
     escape_velocity,
+    geostationary_altitude,
+    geostationary_dv,
+    landing_dv,
     low_orbit_altitude,
     surface_density,
 )
-from kopdeltav.models import G0, CelestialBody
+from kopdeltav.models import G0, CelestialBody, OrbitalElements
 from kopdeltav.parser import parse_bodies
+from kopdeltav.system import build_tree
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -334,3 +341,273 @@ class TestCalculateTsiolkovsky:
     def test_zero_mass_raises(self) -> None:
         with pytest.raises(ValueError, match="positive"):
             calculate_tsiolkovsky(1000.0, 340.0, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for new tests
+# ---------------------------------------------------------------------------
+
+
+def _make_minimal_system() -> tuple[object, CelestialBody, CelestialBody]:
+    """Build a minimal Sun + Home + Target system for route tests.
+
+    Returns:
+        (system, home, target) where system is a CelestialSystem.
+    """
+    from kopdeltav.system import CelestialSystem
+
+    sun = CelestialBody(
+        name="Sun",
+        radius=261_600_000.0,
+        gee_asl=28.0,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=None,
+        rotational_period=432_000.0,
+        display_name="Sun",
+    )
+    home = CelestialBody(
+        name="Home",
+        radius=600_000.0,
+        gee_asl=1.0,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=OrbitalElements(
+            semi_major_axis=13_599_840_256.0,
+            eccentricity=0.0,
+            inclination=0.0,
+            argument_of_periapsis=0.0,
+            longitude_of_ascending_node=0.0,
+            mean_anomaly_at_epoch=0.0,
+            epoch=0.0,
+        ),
+        rotational_period=21_600.0,
+        display_name="Home",
+        is_home_world=True,
+        reference_body_name="Sun",
+    )
+    target = CelestialBody(
+        name="Target",
+        radius=320_000.0,
+        gee_asl=0.9,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=OrbitalElements(
+            semi_major_axis=20_726_155_264.0,
+            eccentricity=0.0,
+            inclination=0.0,
+            argument_of_periapsis=0.0,
+            longitude_of_ascending_node=0.0,
+            mean_anomaly_at_epoch=0.0,
+            epoch=0.0,
+        ),
+        rotational_period=35_000.0,
+        display_name="Target",
+        reference_body_name="Sun",
+    )
+    system: CelestialSystem = build_tree([sun, home, target])
+    return system, home, target
+
+
+# ---------------------------------------------------------------------------
+# Tests: geostationary_altitude
+# ---------------------------------------------------------------------------
+
+
+class TestGeostationaryAltitude:
+    def test_sanctar(self) -> None:
+        """Verify formula against manual computation for Sanctar.
+
+        Sanctar: radius=670 000 m, geeASL=1.1, rotationPeriod=90291.8154599763 s
+        Expected r_geo = 10 000 000 m  →  geo_alt = 9 330 000 m
+        """
+        sanctar = _make_sanctar()
+        alt = geostationary_altitude(sanctar)
+        # Manual: r_geo = (mu * T^2 / (4*pi^2))^(1/3) - radius
+        mu = sanctar.mu
+        t = sanctar.rotational_period
+        r_geo_expected = (mu * t * t / (4.0 * math.pi**2)) ** (1.0 / 3.0)
+        expected_alt = r_geo_expected - sanctar.radius
+        assert math.isclose(alt, expected_alt, rel_tol=1e-9)
+        # Sanctar reference: geo_alt ≈ 9 330 000 m
+        assert math.isclose(alt, 9_330_000.0, rel_tol=1e-4)
+
+    def test_zero_rotation_raises(self) -> None:
+        body = CelestialBody(
+            name="Tidally",
+            radius=300_000.0,
+            gee_asl=0.5,
+            has_ocean=False,
+            atmosphere=None,
+            orbit=None,
+            rotational_period=0.0,
+            display_name="Tidally",
+        )
+        with pytest.raises(ValueError, match="Rotational period must be positive"):
+            geostationary_altitude(body)
+
+    def test_negative_rotation_raises(self) -> None:
+        body = CelestialBody(
+            name="Retrograde",
+            radius=300_000.0,
+            gee_asl=0.5,
+            has_ocean=False,
+            atmosphere=None,
+            orbit=None,
+            rotational_period=-10_000.0,
+            display_name="Retrograde",
+        )
+        with pytest.raises(ValueError, match="Rotational period must be positive"):
+            geostationary_altitude(body)
+
+
+# ---------------------------------------------------------------------------
+# Tests: geostationary_dv
+# ---------------------------------------------------------------------------
+
+
+class TestGeostationaryDv:
+    def test_returns_hohmann_result(self) -> None:
+        """Result must be a HohmannResult with positive ΔV values."""
+        from kopdeltav.calculator import HohmannResult
+
+        sanctar = _make_sanctar()
+        result = geostationary_dv(sanctar)
+        assert isinstance(result, HohmannResult)
+        assert result.departure_dv > 0
+        assert result.arrival_dv > 0
+        assert result.total_dv > 0
+        assert result.transfer_time > 0
+
+    def test_total_dv_is_sum(self) -> None:
+        sanctar = _make_sanctar()
+        result = geostationary_dv(sanctar)
+        assert math.isclose(result.total_dv, result.departure_dv + result.arrival_dv, rel_tol=1e-9)
+
+    def test_geo_above_low_orbit(self) -> None:
+        """Geostationary orbit must be above the low orbit (sanity check)."""
+        sanctar = _make_sanctar()
+        lo_alt = low_orbit_altitude(sanctar)
+        geo_alt = geostationary_altitude(sanctar)
+        assert geo_alt > lo_alt
+
+
+# ---------------------------------------------------------------------------
+# Tests: escape_dv_from_low_orbit
+# ---------------------------------------------------------------------------
+
+
+class TestEscapeDvFromLowOrbit:
+    def test_sanctar(self) -> None:
+        """escape_dv must be positive and less than the surface escape velocity."""
+        sanctar = _make_sanctar()
+        dv = escape_dv_from_low_orbit(sanctar)
+        assert dv > 0
+        # At any altitude, v_escape > v_circular, so dv > 0.
+        # The required ΔV from orbit must be less than escaping from the surface.
+        v_esc_surface = escape_velocity(sanctar, 0.0)
+        assert dv < v_esc_surface
+
+    def test_equals_formula(self) -> None:
+        """Verify dv = v_escape(lo_alt) - v_circular(lo_alt)."""
+        sanctar = _make_sanctar()
+        lo_alt = low_orbit_altitude(sanctar)
+        expected = escape_velocity(sanctar, lo_alt) - circular_velocity(sanctar, lo_alt)
+        dv = escape_dv_from_low_orbit(sanctar)
+        assert math.isclose(dv, expected, rel_tol=1e-9)
+
+    def test_airless_body(self) -> None:
+        """Works for airless bodies too."""
+        body = _make_airless_body()
+        dv = escape_dv_from_low_orbit(body)
+        assert dv > 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: landing_dv
+# ---------------------------------------------------------------------------
+
+
+class TestLandingDv:
+    def test_with_atmosphere(self) -> None:
+        """Powered ΔV > 0; aerobrake ΔV is 0.0 (atmosphere present)."""
+        sanctar = _make_sanctar()
+        powered, aerobrake = landing_dv(sanctar)
+        assert powered > 0
+        assert aerobrake == 0.0
+
+    def test_without_atmosphere(self) -> None:
+        """Powered ΔV > 0; aerobrake is None (no atmosphere)."""
+        body = _make_airless_body()
+        powered, aerobrake = landing_dv(body)
+        assert powered > 0
+        assert aerobrake is None
+
+    def test_powered_equals_low_orbit_velocity(self) -> None:
+        """Powered ΔV equals circular velocity at low orbit altitude."""
+        sanctar = _make_sanctar()
+        powered, _ = landing_dv(sanctar)
+        lo_alt = low_orbit_altitude(sanctar)
+        v_circ = circular_velocity(sanctar, lo_alt)
+        assert math.isclose(powered, v_circ, rel_tol=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Tests: compute_route
+# ---------------------------------------------------------------------------
+
+
+class TestComputeRoute:
+    def test_third_cosmic_velocity(self) -> None:
+        """Route with destination=None has exactly 3 steps."""
+        system, _home, _target = _make_minimal_system()
+        steps = compute_route(system)
+        assert len(steps) == 3
+
+    def test_route_to_planet(self) -> None:
+        """Route to a planet (no moon) has exactly 5 steps."""
+        system, _home, target = _make_minimal_system()
+        steps = compute_route(system, destination=target)
+        assert len(steps) == 5
+
+    def test_route_steps_have_labels(self) -> None:
+        """Every step must have a non-empty label."""
+        system, _home, target = _make_minimal_system()
+        steps = compute_route(system, destination=target)
+        for step in steps:
+            assert step.label, f"Step has empty label: {step}"
+
+    def test_route_cumulative_consistency(self) -> None:
+        """Cumulative value must equal running sum of individual ΔVs."""
+        system, _home, target = _make_minimal_system()
+        steps = compute_route(system, destination=target)
+        running = 0.0
+        for step in steps:
+            running += step.dv
+            assert math.isclose(step.cumulative, running, rel_tol=1e-9), (
+                f"Cumulative mismatch at '{step.label}': "
+                f"expected {running:.4f}, got {step.cumulative:.4f}"
+            )
+
+    def test_all_dvs_positive(self) -> None:
+        """Every step's ΔV must be positive."""
+        system, _home, target = _make_minimal_system()
+        for steps in [compute_route(system), compute_route(system, destination=target)]:
+            for step in steps:
+                assert step.dv > 0, f"Non-positive ΔV in step '{step.label}': {step.dv}"
+
+    def test_third_cosmic_step_labels(self) -> None:
+        """Third cosmic velocity route step labels contain expected keywords."""
+        system, _home, _target = _make_minimal_system()
+        steps = compute_route(system)
+        labels = [s.label for s in steps]
+        assert any("Launch" in lbl for lbl in labels)
+        assert any("Escape" in lbl for lbl in labels)
+
+    def test_dvstep_dataclass(self) -> None:
+        """DvStep dataclass fields are accessible and note defaults to empty."""
+        step = DvStep(label="Test burn", dv=100.0, cumulative=200.0)
+        assert step.label == "Test burn"
+        assert step.dv == 100.0
+        assert step.cumulative == 200.0
+        assert step.note == ""

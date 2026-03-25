@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from kopdeltav.models import G0, CelestialBody, hermite_interp
+
+if TYPE_CHECKING:
+    from kopdeltav.system import CelestialSystem
 
 # Universal gas constant [J/(mol·K)]
 R_GAS: float = 8.314462618
@@ -425,3 +429,278 @@ def calculate_tsiolkovsky(
         dry_mass=dry_mass,
         fuel_mass=fuel_mass,
     )
+
+
+# ---------------------------------------------------------------------------
+# Geostationary orbit
+# ---------------------------------------------------------------------------
+
+
+def geostationary_altitude(body: CelestialBody) -> float:
+    """Calculate the altitude of a geostationary orbit.
+
+    静止軌道の高度を計算する。
+
+    Uses the formula::
+
+        r_geo = (mu * T^2 / (4 * pi^2))^(1/3)
+        altitude = r_geo - radius
+
+    where *T* is the sidereal rotation period of the body.
+
+    Args:
+        body: Target celestial body.
+
+    Returns:
+        Geostationary orbit altitude above surface [m].
+
+    Raises:
+        ValueError: If ``body.rotational_period`` is non-positive.
+    """
+    if body.rotational_period <= 0.0:
+        raise ValueError(
+            f"Rotational period must be positive for a geostationary orbit: "
+            f"{body.rotational_period}"
+        )
+    t = body.rotational_period
+    r_geo: float = math.pow(body.mu * t * t / (4.0 * math.pi**2), 1.0 / 3.0)
+    return r_geo - body.radius
+
+
+def geostationary_dv(body: CelestialBody) -> HohmannResult:
+    """Calculate the ΔV for a Hohmann transfer from low orbit to geostationary orbit.
+
+    低軌道から静止軌道へのホーマン遷移ΔVを計算する。
+
+    Args:
+        body: Target celestial body.
+
+    Returns:
+        :class:`HohmannResult` for the low orbit → geostationary transfer.
+
+    Raises:
+        ValueError: If ``body.rotational_period`` is non-positive, or if the
+            geostationary orbit is below the low orbit (extremely fast rotators).
+    """
+    lo_alt = low_orbit_altitude(body)
+    geo_alt = geostationary_altitude(body)
+    geo_sma = body.radius + geo_alt
+    return calculate_hohmann(body, lo_alt, geo_sma)
+
+
+# ---------------------------------------------------------------------------
+# Escape ΔV from low orbit
+# ---------------------------------------------------------------------------
+
+
+def escape_dv_from_low_orbit(body: CelestialBody) -> float:
+    """Calculate the ΔV needed to escape from low orbit.
+
+    低軌道から脱出するのに必要なΔVを計算する。
+
+    Computes ``v_escape(lo_alt) - v_circular(lo_alt)``, which is the
+    impulsive burn required to reach escape velocity from a circular
+    parking orbit at the standard low orbit altitude.
+
+    Args:
+        body: Target celestial body.
+
+    Returns:
+        Escape ΔV from low orbit [m/s]. Always positive.
+    """
+    lo_alt = low_orbit_altitude(body)
+    v_esc = escape_velocity(body, lo_alt)
+    v_circ = circular_velocity(body, lo_alt)
+    return v_esc - v_circ
+
+
+# ---------------------------------------------------------------------------
+# Landing ΔV
+# ---------------------------------------------------------------------------
+
+
+def landing_dv(body: CelestialBody) -> tuple[float, float | None]:
+    """Estimate the ΔV required to land on a body.
+
+    天体への着陸に必要なΔVを推定する。
+
+    The powered landing ΔV is approximated as the circular orbital velocity
+    at the low orbit altitude — representing the speed that must be cancelled
+    to descend from orbit to the surface.
+
+    For bodies **with** atmosphere, aerobraking can absorb most of the
+    orbital energy; the aerobrake contribution is returned as ``0.0`` (the
+    rocket engine burn during atmospheric descent is negligible compared to
+    the powered case).  The caller can display this as "aerobrake assist."
+
+    For bodies **without** atmosphere, there is no aerobraking option, so
+    the second element is ``None``.
+
+    Args:
+        body: Target celestial body.
+
+    Returns:
+        A tuple ``(powered_dv, aerobrake_dv)`` where:
+
+        - *powered_dv*: ΔV for a fully powered landing [m/s]. Always > 0.
+        - *aerobrake_dv*: ``0.0`` if the body has atmosphere (aerobraking
+          handles orbital deceleration); ``None`` if no atmosphere.
+    """
+    lo_alt = low_orbit_altitude(body)
+    powered_dv = circular_velocity(body, lo_alt)
+    aerobrake_dv: float | None = 0.0 if body.atmosphere is not None else None
+    return powered_dv, aerobrake_dv
+
+
+# ---------------------------------------------------------------------------
+# ΔV route planner
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DvStep:
+    """A single step in a ΔV route.
+
+    ΔVルートの1ステップ。
+
+    Attributes:
+        label: Human-readable description of this maneuver.
+        dv: ΔV for this step [m/s].
+        cumulative: Running total ΔV from mission start [m/s].
+        note: Optional supplementary information (e.g. aerobrake alternative).
+    """
+
+    label: str
+    dv: float
+    cumulative: float
+    note: str = ""
+
+
+def compute_route(
+    system: CelestialSystem,
+    destination: CelestialBody | None = None,
+    moon: CelestialBody | None = None,
+) -> list[DvStep]:
+    """Compute a ΔV route from the home world to an optional destination.
+
+    ホームワールドから目的地までのΔVルートを計算する。
+
+    Three modes depending on the arguments:
+
+    **Third cosmic velocity** (``destination=None``):
+        1. Launch to low orbit (total_rocket from :func:`calculate_launch`).
+        2. Escape home world (:func:`escape_dv_from_low_orbit`).
+        3. Escape star system: Hohmann-style burn at the home world's orbital
+           altitude around the parent star (``v_escape - v_circular`` at that
+           altitude in the parent's gravity).
+
+    **Planet flyby / capture** (``destination=planet``, ``moon=None``):
+        1. Launch to low orbit.
+        2. Escape home world.
+        3. Hohmann transfer in parent body's frame (home SMA → destination SMA).
+        4. Destination orbit insertion (≈ ``escape_dv_from_low_orbit`` of
+           destination — reverse capture burn).
+        5. Landing on destination.
+
+    **Moon mission** (``destination=planet``, ``moon=satellite``):
+        Steps 1-4 as above.
+        5. Hohmann transfer from destination low orbit to moon SMA.
+        6. Landing on moon.
+
+    All intermediate values are accumulated into the ``cumulative`` field of
+    each :class:`DvStep`.
+
+    Args:
+        system: The :class:`~kopdeltav.system.CelestialSystem` describing the
+            planetary system.
+        destination: Target planet (must orbit the same parent as the home
+            world).  Pass ``None`` to compute the third cosmic velocity route.
+        moon: Target moon orbiting *destination*.  Ignored when
+            ``destination`` is ``None``.
+
+    Returns:
+        Ordered list of :class:`DvStep` objects representing each maneuver.
+
+    Raises:
+        ValueError: If the home world has no orbit (root star) or no parent,
+            or if *destination* / *moon* have no orbit data.
+    """
+    home = system.home_world
+    parent = home.parent
+    if parent is None:
+        raise ValueError(
+            f"Home world '{home.name}' has no parent body; cannot compute interplanetary route."
+        )
+    if home.orbit is None:
+        raise ValueError(
+            f"Home world '{home.name}' has no orbital elements; "
+            "cannot compute interplanetary route."
+        )
+
+    steps: list[DvStep] = []
+    cumulative = 0.0
+
+    def _add(label: str, dv: float, note: str = "") -> None:
+        nonlocal cumulative
+        cumulative += dv
+        steps.append(DvStep(label=label, dv=dv, cumulative=cumulative, note=note))
+
+    # Step 1: Launch to low orbit.
+    lo_alt = low_orbit_altitude(home)
+    launch = calculate_launch(home, lo_alt)
+    _add("Launch to low orbit", launch.total_rocket)
+
+    # Step 2: Escape home world.
+    esc_home = escape_dv_from_low_orbit(home)
+    _add(f"Escape {home.name}", esc_home)
+
+    if destination is None:
+        # Third cosmic velocity: escape the parent star system from home orbit.
+        home_sma = home.orbit.semi_major_axis
+        home_orbit_alt = home_sma - parent.radius
+        v_esc_star = escape_velocity(parent, home_orbit_alt)
+        v_circ_star = circular_velocity(parent, home_orbit_alt)
+        esc_star = v_esc_star - v_circ_star
+        _add(f"Escape {parent.name} system", esc_star)
+        return steps
+
+    # destination is set — interplanetary mission.
+    if destination.orbit is None:
+        raise ValueError(f"Destination '{destination.name}' has no orbital elements.")
+
+    # Step 3: Hohmann transfer in parent's frame.
+    home_sma = home.orbit.semi_major_axis
+    home_orbit_alt = home_sma - parent.radius
+    dest_sma = destination.orbit.semi_major_axis
+    hohmann = calculate_hohmann(parent, home_orbit_alt, dest_sma)
+    _add(f"Transfer to {destination.name}", hohmann.departure_dv)
+
+    # Step 4: Capture at destination.
+    esc_dest = escape_dv_from_low_orbit(destination)
+    _add(f"Capture at {destination.name}", esc_dest)
+
+    if moon is None:
+        # Step 5: Land on destination.
+        powered_dv, aerobrake_dv = landing_dv(destination)
+        note = f"aerobrake option: {aerobrake_dv} m/s" if aerobrake_dv is not None else ""
+        _add(f"Land on {destination.name}", powered_dv, note=note)
+        return steps
+
+    # Moon mission.
+    if moon.orbit is None:
+        raise ValueError(f"Moon '{moon.name}' has no orbital elements.")
+
+    # Step 5: Transfer from destination low orbit to moon SMA.
+    dest_lo_alt = low_orbit_altitude(destination)
+    moon_sma = moon.orbit.semi_major_axis
+    moon_hohmann = calculate_hohmann(destination, dest_lo_alt, moon_sma)
+    _add(f"Transfer to {moon.name}", moon_hohmann.departure_dv)
+
+    # Step 6: Land on moon.
+    powered_dv_moon, aerobrake_dv_moon = landing_dv(moon)
+    note_moon = (
+        f"aerobrake option: {aerobrake_dv_moon} m/s" if aerobrake_dv_moon is not None else ""
+    )
+    _add(f"Land on {moon.name}", powered_dv_moon, note=note_moon)
+
+    return steps
