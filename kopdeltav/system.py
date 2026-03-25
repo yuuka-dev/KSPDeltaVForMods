@@ -1,0 +1,325 @@
+"""Celestial system tree construction and GameData config scanning.
+
+天体ツリーの構築と GameData/ の .cfg ファイルスキャンを提供する。
+"""
+
+from __future__ import annotations
+
+import logging
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+
+from kopdeltav.calculator import calculate_hohmann
+from kopdeltav.models import CelestialBody
+from kopdeltav.parser import parse_bodies
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# CelestialSystem
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CelestialSystem:
+    """A fully linked tree of celestial bodies parsed from a Kopernicus config.
+
+    Kopernicus 設定からパースされた天体の完全なツリー構造。
+
+    Attributes:
+        root: The root star (top of the hierarchy, no parent).
+        bodies: Flat name → body lookup dict for O(1) access.
+        home_world: The body with ``is_home_world=True``.
+    """
+
+    root: CelestialBody
+    bodies: dict[str, CelestialBody]
+    home_world: CelestialBody
+
+
+# ---------------------------------------------------------------------------
+# Tree construction
+# ---------------------------------------------------------------------------
+
+
+def build_tree(bodies: list[CelestialBody]) -> CelestialSystem:
+    """Build a parent/children tree from a flat list of bodies.
+
+    フラットな天体リストから親子関係ツリーを構築する。
+
+    Steps:
+        1. Index all bodies by name.
+        2. Link ``parent`` / ``children`` using ``reference_body_name``.
+        3. Identify the root: body with no ``orbit`` (primary star); fallback
+           is any body whose ``reference_body_name`` did not resolve.
+        4. Identify ``home_world``: body with ``is_home_world=True``; raises
+           ``ValueError`` when none is found.
+        5. Compute SOI for bodies where ``soi == 0``:
+           ``SOI = a * (m_body / m_parent)^(2/5)`` using SMA and mu values.
+
+    Args:
+        bodies: Flat list of CelestialBody objects (e.g. from ``parse_bodies``).
+
+    Returns:
+        A fully linked :class:`CelestialSystem`.
+
+    Raises:
+        ValueError: If *bodies* is empty, no home world is found, or no root
+            can be identified.
+    """
+    if not bodies:
+        raise ValueError("Cannot build tree from an empty body list")
+
+    # Step 1: index by name.
+    index: dict[str, CelestialBody] = {b.name: b for b in bodies}
+
+    # Step 2: link parent/children; track bodies with unresolved parents.
+    unresolved: list[CelestialBody] = []
+    for body in bodies:
+        ref = body.reference_body_name
+        if not ref:
+            # No reference body declared — candidate for root.
+            continue
+        parent = index.get(ref)
+        if parent is None:
+            logger.warning(
+                "Body '%s' references unknown referenceBody '%s'; treating as potential root",
+                body.name,
+                ref,
+            )
+            unresolved.append(body)
+        else:
+            body.parent = parent
+            if body not in parent.children:
+                parent.children.append(body)
+
+    # Step 3: find root.
+    # Primary criterion: body with orbit == None (star with no orbit node).
+    root: CelestialBody | None = None
+    for body in bodies:
+        if body.orbit is None and not body.reference_body_name:
+            if root is not None:
+                logger.warning(
+                    "Multiple bodies with no orbit found; using first ('%s'), ignoring '%s'",
+                    root.name,
+                    body.name,
+                )
+            else:
+                root = body
+
+    # Fallback: use an unresolved body (its parent name pointed nowhere).
+    if root is None and unresolved:
+        root = unresolved[0]
+        logger.warning(
+            "No orbit-less body found; using unresolved-reference body '%s' as root",
+            root.name,
+        )
+
+    # Last resort: the first body in the list.
+    if root is None:
+        root = bodies[0]
+        logger.warning(
+            "Cannot determine root by heuristics; defaulting to first body '%s'",
+            root.name,
+        )
+
+    # Step 4: home world.
+    home_world: CelestialBody | None = None
+    for body in bodies:
+        if body.is_home_world:
+            home_world = body
+            break
+    if home_world is None:
+        raise ValueError(
+            "No body with is_home_world=True found. "
+            "At least one body must declare isHomeWorld = True."
+        )
+
+    # Step 5: compute SOI where soi == 0.
+    for body in bodies:
+        if body.soi == 0.0 and body.parent is not None and body.orbit is not None:
+            a = body.orbit.semi_major_axis
+            m_body = body.mu
+            m_parent = body.parent.mu
+            if m_parent > 0.0 and a > 0.0:
+                body.soi = a * (m_body / m_parent) ** 0.4
+                logger.debug(
+                    "Computed SOI for '%s': %.3e m (a=%.3e, mu_ratio=%.6f)",
+                    body.name,
+                    body.soi,
+                    a,
+                    m_body / m_parent,
+                )
+
+    return CelestialSystem(root=root, bodies=index, home_world=home_world)
+
+
+# ---------------------------------------------------------------------------
+# Transfer ΔV sorting
+# ---------------------------------------------------------------------------
+
+
+def sort_by_transfer_dv(
+    origin: CelestialBody,
+    targets: list[CelestialBody],
+) -> list[tuple[CelestialBody, float]]:
+    """Sort target bodies by Hohmann transfer ΔV from origin, ascending.
+
+    origin からのホーマン遷移 ΔV 昇順でターゲット天体をソートする。
+
+    Both *origin* and every target in *targets* must orbit the same parent
+    body.  The parent body's gravitational parameter (``mu``) is used as the
+    central body for all Hohmann calculations.
+
+    Targets whose orbit is ``None`` or whose SMA is not greater than the
+    origin's parking orbit radius are skipped with a warning.
+
+    Args:
+        origin: The departure body. Must have a non-None ``orbit`` and a
+            non-None ``parent``.
+        targets: List of target bodies orbiting the same parent as *origin*.
+
+    Returns:
+        List of ``(body, total_dv)`` tuples sorted ascending by *total_dv*.
+        Bodies that could not be evaluated are omitted.
+
+    Raises:
+        ValueError: If *origin* has no orbit or no parent.
+    """
+    if origin.orbit is None:
+        raise ValueError(f"Origin body '{origin.name}' has no orbit")
+    if origin.parent is None:
+        raise ValueError(f"Origin body '{origin.name}' has no parent")
+
+    parent = origin.parent
+    # Parking altitude in parent's reference frame = origin's SMA - parent's radius
+    parking_alt = origin.orbit.semi_major_axis - parent.radius
+
+    results: list[tuple[CelestialBody, float]] = []
+    for target in targets:
+        if target is origin:
+            continue
+        if target.orbit is None:
+            logger.warning(
+                "Target '%s' has no orbit; skipping from transfer sort",
+                target.name,
+            )
+            continue
+        target_sma = target.orbit.semi_major_axis
+        try:
+            hohmann = calculate_hohmann(parent, parking_alt, target_sma)
+        except ValueError as exc:
+            logger.warning(
+                "Cannot compute Hohmann transfer to '%s': %s",
+                target.name,
+                exc,
+            )
+            continue
+        results.append((target, hohmann.total_dv))
+
+    results.sort(key=lambda pair: pair[1])
+    return results
+
+
+# ---------------------------------------------------------------------------
+# GameData/ config scanner
+# ---------------------------------------------------------------------------
+
+
+def scan_configs(
+    gamedata_path: Path,
+    output_dir: Path | None = None,
+    exclude_dirs: frozenset[str] = frozenset({"kopernicus"}),
+) -> CelestialSystem:
+    """Recursively scan a GameData/ directory for Kopernicus ``.cfg`` files.
+
+    GameData/ ディレクトリを再帰スキャンし、Kopernicus 設定から天体ツリーを構築する。
+
+    All ``.cfg`` files are read. Directories whose **lowercase** names appear
+    in *exclude_dirs* are skipped entirely (default: ``{"kopernicus"}``).
+    Files that yield no bodies are silently ignored.  If *output_dir* is
+    provided, every successfully parsed ``.cfg`` is copied there (directory
+    is created if it does not exist).
+
+    Args:
+        gamedata_path: Path to the ``GameData/`` directory.
+        output_dir: Optional directory to copy valid ``.cfg`` files into.
+        exclude_dirs: Set of directory names (lowercase) to skip during scan.
+
+    Returns:
+        A :class:`CelestialSystem` built from all bodies found.
+
+    Raises:
+        ValueError: If *gamedata_path* is not an existing directory, if no
+            bodies are found across all scanned configs, or if
+            :func:`build_tree` fails (e.g. no home world).
+    """
+    if not gamedata_path.is_dir():
+        raise ValueError(f"gamedata_path is not an existing directory: {gamedata_path}")
+
+    all_bodies: list[CelestialBody] = []
+    valid_cfgs: list[Path] = []
+
+    for cfg_path in _iter_cfgs(gamedata_path, exclude_dirs):
+        try:
+            source = cfg_path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            logger.warning("Cannot read '%s': %s", cfg_path, exc)
+            continue
+
+        bodies = parse_bodies(source)
+        if not bodies:
+            logger.debug("No bodies found in '%s'; skipping", cfg_path)
+            continue
+
+        logger.info("Found %d body/bodies in '%s'", len(bodies), cfg_path)
+        all_bodies.extend(bodies)
+        valid_cfgs.append(cfg_path)
+
+    if not all_bodies:
+        raise ValueError(f"No celestial bodies found under '{gamedata_path}'")
+
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for cfg_path in valid_cfgs:
+            dest = output_dir / cfg_path.name
+            try:
+                shutil.copy2(cfg_path, dest)
+                logger.debug("Copied '%s' → '%s'", cfg_path, dest)
+            except OSError as exc:
+                logger.warning("Cannot copy '%s' to '%s': %s", cfg_path, dest, exc)
+
+    return build_tree(all_bodies)
+
+
+def _iter_cfgs(directory: Path, exclude_dirs: frozenset[str]) -> list[Path]:
+    """Recursively yield .cfg files under *directory*, skipping excluded dirs.
+
+    ディレクトリ以下の .cfg ファイルをリストで返す。除外ディレクトリはスキップ。
+
+    Args:
+        directory: Root directory to scan.
+        exclude_dirs: Lowercase directory names to skip.
+
+    Returns:
+        Sorted list of Path objects for all matching ``.cfg`` files.
+    """
+    results: list[Path] = []
+    try:
+        entries = sorted(directory.iterdir())
+    except OSError as exc:
+        logger.warning("Cannot list directory '%s': %s", directory, exc)
+        return results
+
+    for entry in entries:
+        if entry.is_dir():
+            if entry.name.lower() in exclude_dirs:
+                logger.debug("Skipping excluded directory '%s'", entry)
+                continue
+            results.extend(_iter_cfgs(entry, exclude_dirs))
+        elif entry.is_file() and entry.suffix.lower() == ".cfg":
+            results.append(entry)
+
+    return results
