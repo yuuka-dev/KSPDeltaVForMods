@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kopdeltav"
+version = "0.1.0"
+description = "Delta-V calculator for KSP1 planet pack mods"
+requires-python = ">=3.10"
+license = "MIT"
+
+[project.optional-dependencies]
+api = ["fastapi>=0.100", "uvicorn[standard]>=0.20"]
+dev = ["pytest>=7.0", "ruff>=0.4", "mypy>=1.0"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
