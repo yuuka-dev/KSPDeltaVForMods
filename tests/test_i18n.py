@@ -62,6 +62,18 @@ class TestGetText:
         assert get_text("error.file_not_found", "ja") == "ファイルが見つかりません"
         assert get_text("error.parse_error", "en") == "Failed to parse configuration file"
 
+    def test_route_category_ja(self) -> None:
+        assert get_text("route.launch") == "低軌道投入"
+
+    def test_route_category_en(self) -> None:
+        assert get_text("route.launch", "en") == "Launch to Low Orbit"
+
+    def test_geostationary_key(self) -> None:
+        assert get_text("launch.geostationary") == "静止軌道遷移"
+
+    def test_system_category(self) -> None:
+        assert get_text("system.home_world") == "母星"
+
 
 class TestGetAllKeys:
     def test_returns_flat_dict(self) -> None:
