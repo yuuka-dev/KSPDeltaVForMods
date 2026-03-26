@@ -17,6 +17,26 @@ from kopdeltav.parser import parse_bodies
 logger = logging.getLogger(__name__)
 
 
+def is_barycenter(body: CelestialBody) -> bool:
+    """Heuristic: detect if a body is likely a system barycenter.
+
+    天体がバリセンタ(重心)かどうかをヒューリスティクスで判定する。
+
+    A body is treated as a barycenter when it has children and its
+    radius is smaller than the smallest child's radius.
+
+    Args:
+        body: The body to check.
+
+    Returns:
+        True if the body is likely a barycenter.
+    """
+    if not body.children:
+        return False
+    min_child_radius = min(c.radius for c in body.children)
+    return body.radius < min_child_radius
+
+
 # ---------------------------------------------------------------------------
 # CelestialSystem
 # ---------------------------------------------------------------------------
@@ -228,8 +248,8 @@ def sort_by_transfer_dv(
     body.  The parent body's gravitational parameter (``mu``) is used as the
     central body for all Hohmann calculations.
 
-    Targets whose orbit is ``None`` or whose SMA is not greater than the
-    origin's parking orbit radius are skipped with a warning.
+    Targets whose orbit is ``None`` or whose Hohmann transfer cannot be
+    computed are skipped with a warning.
 
     Args:
         origin: The departure body. Must have a non-None ``orbit`` and a
@@ -262,11 +282,8 @@ def sort_by_transfer_dv(
             continue
         target_sma = target.orbit.semi_major_axis
         try:
-            # Handle inner planets (target SMA < origin SMA) by swapping r1/r2.
             origin_sma = origin.orbit.semi_major_axis
-            r1_alt = min(origin_sma, target_sma) - parent.radius
-            r2_sma = max(origin_sma, target_sma)
-            hohmann = calculate_hohmann(parent, r1_alt, r2_sma)
+            hohmann = calculate_hohmann(parent, origin_sma - parent.radius, target_sma)
         except ValueError as exc:
             logger.warning(
                 "Cannot compute Hohmann transfer to '%s': %s",

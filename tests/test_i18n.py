@@ -1,6 +1,16 @@
 from __future__ import annotations
 
-from kopdeltav.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_all_keys, get_text
+import os
+from unittest.mock import patch
+
+from kopdeltav.i18n import (
+    DEFAULT_LANGUAGE,
+    SUPPORTED_LANGUAGES,
+    _warned_keys,
+    detect_language,
+    get_all_keys,
+    get_text,
+)
 
 
 class TestGetText:
@@ -74,6 +84,51 @@ class TestGetText:
     def test_system_category(self) -> None:
         assert get_text("system.home_world") == "母星"
 
+    def test_indonesian_key(self) -> None:
+        assert get_text("launch.title", "id") == "ΔV Peluncuran ke Orbit Rendah"
+
+    def test_indonesian_common(self) -> None:
+        assert get_text("common.calculate", "id") == "Hitung"
+
+    def test_missing_key_in_lang_falls_back_to_english(self) -> None:
+        """If a key is missing in the requested language, fall back to English."""
+        from kopdeltav.i18n import _TRANSLATIONS
+
+        # Temporarily add a key that exists only in English.
+        _TRANSLATIONS["en"]["_test_fallback"] = {"only_en": "English value"}
+        _warned_keys.discard("_test_fallback.only_en")
+        try:
+            result = get_text("_test_fallback.only_en", "id")
+            assert result == "English value"
+        finally:
+            del _TRANSLATIONS["en"]["_test_fallback"]
+
+    def test_completely_unknown_key_returns_key_string(self) -> None:
+        """A key not found in any language returns the key string itself."""
+        _warned_keys.discard("totally.unknown_key_xyz")
+        result = get_text("totally.unknown_key_xyz", "en")
+        assert result == "totally.unknown_key_xyz"
+
+    def test_new_keys_radius_short(self) -> None:
+        assert get_text("body.radius_short", "ja") == "半径"
+        assert get_text("body.radius_short", "en") == "R"
+        assert get_text("body.radius_short", "id") == "R"
+
+    def test_new_keys_route_step(self) -> None:
+        assert get_text("route.step", "ja") == "ステップ"
+        assert get_text("route.step", "en") == "Step"
+        assert get_text("route.step", "id") == "Langkah"
+
+    def test_new_keys_route_dv(self) -> None:
+        assert get_text("route.dv", "ja") == "ΔV"
+        assert get_text("route.dv", "en") == "ΔV"
+        assert get_text("route.dv", "id") == "ΔV"
+
+    def test_new_keys_route_total(self) -> None:
+        assert get_text("route.total", "ja") == "合計"
+        assert get_text("route.total", "en") == "Total"
+        assert get_text("route.total", "id") == "Total"
+
 
 class TestGetAllKeys:
     def test_returns_flat_dict(self) -> None:
@@ -98,6 +153,20 @@ class TestGetAllKeys:
         en_keys = set(get_all_keys("en").keys())
         assert ja_keys == en_keys
 
+    def test_all_en_keys_exist_in_id(self) -> None:
+        """All English keys must exist in Indonesian (completeness check)."""
+        en_keys = set(get_all_keys("en").keys())
+        id_keys = set(get_all_keys("id").keys())
+        missing = en_keys - id_keys
+        assert not missing, f"Keys missing in 'id': {missing}"
+
+    def test_all_en_keys_exist_in_ja(self) -> None:
+        """All English keys must exist in Japanese (completeness check)."""
+        en_keys = set(get_all_keys("en").keys())
+        ja_keys = set(get_all_keys("ja").keys())
+        missing = en_keys - ja_keys
+        assert not missing, f"Keys missing in 'ja': {missing}"
+
     def test_invalid_lang_falls_back(self) -> None:
         result = get_all_keys("fr")
         expected = get_all_keys(DEFAULT_LANGUAGE)
@@ -109,5 +178,85 @@ class TestConstants:
         assert "ja" in SUPPORTED_LANGUAGES
         assert "en" in SUPPORTED_LANGUAGES
 
+    def test_indonesian_in_supported_languages(self) -> None:
+        assert "id" in SUPPORTED_LANGUAGES
+
     def test_default_language(self) -> None:
         assert DEFAULT_LANGUAGE == "ja"
+
+
+class TestDetectLanguage:
+    def test_override_id(self) -> None:
+        assert detect_language(override="id") == "id"
+
+    def test_override_ja(self) -> None:
+        assert detect_language(override="ja") == "ja"
+
+    def test_override_en(self) -> None:
+        assert detect_language(override="en") == "en"
+
+    def test_override_unsupported_falls_back_to_env(self) -> None:
+        with (
+            patch.dict(os.environ, {"LC_MESSAGES": "", "LANG": "", "LC_ALL": ""}, clear=False),
+            patch("kopdeltav.i18n.locale.getlocale", return_value=(None, None)),
+        ):
+            result = detect_language(override="xx")
+            # With no env vars and no locale, should fall back to "en"
+            assert result == "en"
+
+    def test_lang_env_ja(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"LC_MESSAGES": "", "LANG": "ja_JP.UTF-8", "LC_ALL": ""},
+            clear=False,
+        ):
+            assert detect_language() == "ja"
+
+    def test_lc_messages_priority_over_lang(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"LC_MESSAGES": "en_US.UTF-8", "LANG": "ja_JP.UTF-8", "LC_ALL": ""},
+            clear=False,
+        ):
+            assert detect_language() == "en"
+
+    def test_unknown_locale_returns_en(self) -> None:
+        with (
+            patch.dict(
+                os.environ,
+                {"LC_MESSAGES": "xx_XX.UTF-8", "LANG": "xx_XX", "LC_ALL": "xx"},
+                clear=False,
+            ),
+            patch("kopdeltav.i18n.locale.getlocale", return_value=(None, None)),
+        ):
+            assert detect_language() == "en"
+
+    def test_empty_env_returns_en(self) -> None:
+        with (
+            patch.dict(
+                os.environ,
+                {"LC_MESSAGES": "", "LANG": "", "LC_ALL": ""},
+                clear=False,
+            ),
+            patch("kopdeltav.i18n.locale.getlocale", return_value=(None, None)),
+        ):
+            assert detect_language() == "en"
+
+    def test_lc_all_fallback(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"LC_MESSAGES": "", "LANG": "", "LC_ALL": "id_ID.UTF-8"},
+            clear=False,
+        ):
+            assert detect_language() == "id"
+
+    def test_locale_getlocale_fallback(self) -> None:
+        with (
+            patch.dict(
+                os.environ,
+                {"LC_MESSAGES": "", "LANG": "", "LC_ALL": ""},
+                clear=False,
+            ),
+            patch("kopdeltav.i18n.locale.getlocale", return_value=("ja_JP", "UTF-8")),
+        ):
+            assert detect_language() == "ja"

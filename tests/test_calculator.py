@@ -12,6 +12,7 @@ import pytest
 
 from kopdeltav.calculator import (
     DvStep,
+    SegmentType,
     calculate_hohmann,
     calculate_launch,
     calculate_tsiolkovsky,
@@ -291,10 +292,36 @@ class TestCalculateHohmann:
         result = calculate_hohmann(sanctar, 80_000.0, r2)
         assert math.isclose(result.transfer_time, expected_time, rel_tol=1e-9)
 
-    def test_target_below_parking_raises(self) -> None:
+    def test_inward_transfer(self) -> None:
+        """Hohmann transfer to inner orbit (r2 < r1) must work and set inward=True."""
         sanctar = _make_sanctar()
-        with pytest.raises(ValueError, match="larger"):
-            calculate_hohmann(sanctar, 80_000.0, 700_000.0)
+        r_inner = sanctar.radius + 20_000.0
+        result = calculate_hohmann(sanctar, 80_000.0, r_inner)
+        assert result.inward is True
+        assert result.departure_dv > 0
+        assert result.arrival_dv > 0
+        assert math.isclose(result.total_dv, result.departure_dv + result.arrival_dv)
+        assert result.transfer_time > 0
+
+    def test_inward_dv_matches_outward_swapped(self) -> None:
+        """Inward transfer DVs should match outward with departure/arrival swapped."""
+        sanctar = _make_sanctar()
+        r_inner = sanctar.radius + 20_000.0
+        r_outer_sma = sanctar.radius + 80_000.0
+        outward = calculate_hohmann(sanctar, 20_000.0, r_outer_sma)
+        inward = calculate_hohmann(sanctar, 80_000.0, r_inner)
+        assert math.isclose(inward.departure_dv, outward.arrival_dv, rel_tol=1e-9)
+        assert math.isclose(inward.arrival_dv, outward.departure_dv, rel_tol=1e-9)
+        assert math.isclose(inward.total_dv, outward.total_dv, rel_tol=1e-9)
+        assert inward.inward is True
+        assert outward.inward is False
+
+    def test_identical_orbits_raises(self) -> None:
+        """r1 == r2 should raise ValueError."""
+        sanctar = _make_sanctar()
+        r_same = sanctar.radius + 80_000.0
+        with pytest.raises(ValueError, match="identical"):
+            calculate_hohmann(sanctar, 80_000.0, r_same)
 
     def test_negative_parking_raises(self) -> None:
         sanctar = _make_sanctar()
@@ -640,9 +667,283 @@ class TestComputeRoute:
             assert math.isclose(step.cumulative, running, rel_tol=1e-9)
 
     def test_dvstep_dataclass(self) -> None:
-        """DvStep dataclass fields are accessible and note defaults to empty."""
+        """DvStep dataclass fields are accessible, with segment_type and note defaults."""
         step = DvStep(label="Test burn", dv=100.0, cumulative=200.0)
         assert step.label == "Test burn"
         assert step.dv == 100.0
         assert step.cumulative == 200.0
+        assert step.segment_type == SegmentType.TRANSFER
         assert step.note == ""
+
+    def test_dvstep_frozen(self) -> None:
+        """DvStep is frozen (immutable)."""
+        step = DvStep(label="Test burn", dv=100.0, cumulative=200.0)
+        with pytest.raises(AttributeError):
+            step.dv = 999.0  # type: ignore[misc]
+
+    def test_dvstep_with_segment_type(self) -> None:
+        """DvStep accepts an explicit segment_type."""
+        step = DvStep(
+            label="Launch",
+            dv=3000.0,
+            cumulative=3000.0,
+            segment_type=SegmentType.LAUNCH,
+        )
+        assert step.segment_type == SegmentType.LAUNCH
+
+    def test_route_segment_types(self) -> None:
+        """Route steps have correct segment_type values."""
+        system, _home, target = _make_minimal_system()
+        steps = compute_route(system, destination=target)
+        assert steps[0].segment_type == SegmentType.LAUNCH
+        assert steps[1].segment_type == SegmentType.ESCAPE
+        assert steps[2].segment_type == SegmentType.TRANSFER
+        assert steps[3].segment_type == SegmentType.CAPTURE
+        assert steps[4].segment_type == SegmentType.LANDING
+
+    def test_third_cosmic_segment_types(self) -> None:
+        """Third cosmic velocity route has correct segment_types."""
+        system, _home, _target = _make_minimal_system()
+        steps = compute_route(system)
+        assert steps[0].segment_type == SegmentType.LAUNCH
+        assert steps[1].segment_type == SegmentType.ESCAPE
+        assert steps[2].segment_type == SegmentType.SYSTEM_ESCAPE
+
+
+# ---------------------------------------------------------------------------
+# Helpers for inner planet & sub-system tests
+# ---------------------------------------------------------------------------
+
+
+def _make_system_with_inner_planet() -> tuple[object, CelestialBody, CelestialBody]:
+    """Build Sun + Home + Inner where Inner SMA < Home SMA.
+
+    Returns:
+        (system, home, inner) where system is a CelestialSystem.
+    """
+    from kopdeltav.system import CelestialSystem
+
+    sun = CelestialBody(
+        name="Sun",
+        radius=261_600_000.0,
+        gee_asl=28.0,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=None,
+        rotational_period=432_000.0,
+        display_name="Sun",
+    )
+    home = CelestialBody(
+        name="Home",
+        radius=600_000.0,
+        gee_asl=1.0,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=OrbitalElements(
+            semi_major_axis=13_599_840_256.0,
+            eccentricity=0.0,
+            inclination=0.0,
+            argument_of_periapsis=0.0,
+            longitude_of_ascending_node=0.0,
+            mean_anomaly_at_epoch=0.0,
+            epoch=0.0,
+        ),
+        rotational_period=21_600.0,
+        display_name="Home",
+        is_home_world=True,
+        reference_body_name="Sun",
+    )
+    inner = CelestialBody(
+        name="Inner",
+        radius=250_000.0,
+        gee_asl=0.7,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=OrbitalElements(
+            semi_major_axis=5_263_138_304.0,
+            eccentricity=0.0,
+            inclination=0.0,
+            argument_of_periapsis=0.0,
+            longitude_of_ascending_node=0.0,
+            mean_anomaly_at_epoch=0.0,
+            epoch=0.0,
+        ),
+        rotational_period=30_000.0,
+        display_name="Inner",
+        reference_body_name="Sun",
+    )
+    system: CelestialSystem = build_tree([sun, home, inner])
+    return system, home, inner
+
+
+def _make_system_with_subsystem() -> tuple[object, CelestialBody, CelestialBody, CelestialBody]:
+    """Build Sun + Home + Bary(FarWorld, Star2) where Bary is a barycenter.
+
+    Bary has radius=10_000 (smaller than children), making it a barycenter.
+
+    Returns:
+        (system, home, bary, far_world) where system is a CelestialSystem.
+    """
+    from kopdeltav.system import CelestialSystem
+
+    sun = CelestialBody(
+        name="Sun",
+        radius=261_600_000.0,
+        gee_asl=28.0,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=None,
+        rotational_period=432_000.0,
+        display_name="Sun",
+    )
+    home = CelestialBody(
+        name="Home",
+        radius=600_000.0,
+        gee_asl=1.0,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=OrbitalElements(
+            semi_major_axis=13_599_840_256.0,
+            eccentricity=0.0,
+            inclination=0.0,
+            argument_of_periapsis=0.0,
+            longitude_of_ascending_node=0.0,
+            mean_anomaly_at_epoch=0.0,
+            epoch=0.0,
+        ),
+        rotational_period=21_600.0,
+        display_name="Home",
+        is_home_world=True,
+        reference_body_name="Sun",
+    )
+    bary = CelestialBody(
+        name="Chaos",
+        radius=10_000.0,
+        gee_asl=0.001,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=OrbitalElements(
+            semi_major_axis=40_000_000_000.0,
+            eccentricity=0.0,
+            inclination=0.0,
+            argument_of_periapsis=0.0,
+            longitude_of_ascending_node=0.0,
+            mean_anomaly_at_epoch=0.0,
+            epoch=0.0,
+        ),
+        rotational_period=100_000.0,
+        display_name="Chaos",
+        reference_body_name="Sun",
+    )
+    far_world = CelestialBody(
+        name="Farewell",
+        radius=500_000.0,
+        gee_asl=0.8,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=OrbitalElements(
+            semi_major_axis=3_000_000.0,
+            eccentricity=0.0,
+            inclination=0.0,
+            argument_of_periapsis=0.0,
+            longitude_of_ascending_node=0.0,
+            mean_anomaly_at_epoch=0.0,
+            epoch=0.0,
+        ),
+        rotational_period=50_000.0,
+        display_name="Farewell",
+        reference_body_name="Chaos",
+    )
+    star2 = CelestialBody(
+        name="Star2",
+        radius=100_000.0,
+        gee_asl=5.0,
+        has_ocean=False,
+        atmosphere=None,
+        orbit=OrbitalElements(
+            semi_major_axis=6_000_000.0,
+            eccentricity=0.0,
+            inclination=0.0,
+            argument_of_periapsis=0.0,
+            longitude_of_ascending_node=0.0,
+            mean_anomaly_at_epoch=0.0,
+            epoch=0.0,
+        ),
+        rotational_period=80_000.0,
+        display_name="Star2",
+        reference_body_name="Chaos",
+    )
+    system: CelestialSystem = build_tree([sun, home, bary, far_world, star2])
+    return system, home, bary, far_world
+
+
+# ---------------------------------------------------------------------------
+# Tests: inner planet route
+# ---------------------------------------------------------------------------
+
+
+class TestComputeRouteInnerPlanet:
+    """Tests for route to an inner planet (SMA < home SMA)."""
+
+    def test_inner_planet_route_has_5_steps(self) -> None:
+        """Route to inner planet succeeds and has exactly 5 steps."""
+        system, _home, inner = _make_system_with_inner_planet()
+        steps = compute_route(system, destination=inner)
+        assert len(steps) == 5
+
+    def test_inner_planet_cumulative_consistency(self) -> None:
+        """Cumulative value must equal running sum of individual ΔVs."""
+        system, _home, inner = _make_system_with_inner_planet()
+        steps = compute_route(system, destination=inner)
+        running = 0.0
+        for step in steps:
+            running += step.dv
+            assert math.isclose(step.cumulative, running, rel_tol=1e-9), (
+                f"Cumulative mismatch at '{step.label}': "
+                f"expected {running:.4f}, got {step.cumulative:.4f}"
+            )
+
+    def test_inner_planet_all_dvs_positive(self) -> None:
+        """All ΔV steps must be positive for inner planet route."""
+        system, _home, inner = _make_system_with_inner_planet()
+        steps = compute_route(system, destination=inner)
+        for step in steps:
+            assert step.dv > 0, f"Non-positive ΔV in step '{step.label}': {step.dv}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: sub-system (barycenter) route
+# ---------------------------------------------------------------------------
+
+
+class TestComputeRouteSubSystem:
+    """Tests for route via a sub-system barycenter."""
+
+    def test_subsystem_route_has_6_steps(self) -> None:
+        """Route via barycenter destination with moon target has 6 steps."""
+        system, _home, bary, far_world = _make_system_with_subsystem()
+        steps = compute_route(system, destination=bary, moon=far_world)
+        assert len(steps) == 6
+
+    def test_subsystem_cumulative_consistency(self) -> None:
+        """Cumulative value must equal running sum of individual ΔVs."""
+        system, _home, bary, far_world = _make_system_with_subsystem()
+        steps = compute_route(system, destination=bary, moon=far_world)
+        running = 0.0
+        for step in steps:
+            running += step.dv
+            assert math.isclose(step.cumulative, running, rel_tol=1e-9), (
+                f"Cumulative mismatch at '{step.label}': "
+                f"expected {running:.4f}, got {step.cumulative:.4f}"
+            )
+
+    def test_subsystem_segment_types(self) -> None:
+        """Sub-system route has correct segment_type sequence."""
+        system, _home, bary, far_world = _make_system_with_subsystem()
+        steps = compute_route(system, destination=bary, moon=far_world)
+        assert steps[0].segment_type == SegmentType.LAUNCH
+        assert steps[1].segment_type == SegmentType.ESCAPE
+        assert steps[2].segment_type == SegmentType.TRANSFER
+        assert steps[3].segment_type == SegmentType.CAPTURE
+        assert steps[4].segment_type == SegmentType.MOON_TRANSFER
+        assert steps[5].segment_type == SegmentType.MOON_LANDING

@@ -7,12 +7,30 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from kopdeltav.models import G0, CelestialBody, hermite_interp
 
 if TYPE_CHECKING:
     from kopdeltav.system import CelestialSystem
+
+
+class SegmentType(Enum):
+    """Type of a ΔV route segment, used for display coloring.
+
+    ΔVルートセグメントの種別。表示時の色分けに使用。
+    """
+
+    LAUNCH = "launch"
+    ESCAPE = "escape"
+    TRANSFER = "transfer"
+    CAPTURE = "capture"
+    LANDING = "landing"
+    SYSTEM_ESCAPE = "system_escape"
+    MOON_TRANSFER = "moon_transfer"
+    MOON_LANDING = "moon_landing"
+
 
 # Universal gas constant [J/(mol·K)]
 R_GAS: float = 8.314462618
@@ -179,7 +197,7 @@ def surface_density(body: CelestialBody) -> float | None:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class LaunchResult:
     """Results of a launch-to-orbit ΔV calculation.
 
@@ -280,7 +298,7 @@ def calculate_launch(body: CelestialBody, target_altitude: float) -> LaunchResul
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class HohmannResult:
     """Results of a Hohmann transfer calculation.
 
@@ -291,12 +309,14 @@ class HohmannResult:
         arrival_dv: ΔV for arrival/capture burn [m/s].
         total_dv: Total ΔV (departure + arrival) [m/s].
         transfer_time: Transfer time (half-period of the transfer ellipse) [s].
+        inward: True if the transfer is to an inner (lower) orbit.
     """
 
     departure_dv: float
     arrival_dv: float
     total_dv: float
     transfer_time: float
+    inward: bool = False
 
 
 def calculate_hohmann(
@@ -308,7 +328,13 @@ def calculate_hohmann(
 
     パーキング軌道からターゲット軌道へのホーマン遷移ΔVを計算する。
 
-    Standard Hohmann transfer equations::
+    Supports both outward (target > parking) and inward (target < parking)
+    transfers.  For inward transfers the vis-viva computation uses the
+    swapped radii internally and the returned departure/arrival ΔVs are
+    swapped so that ``departure_dv`` is the burn at the parking orbit and
+    ``arrival_dv`` is the burn at the target orbit.
+
+    Standard Hohmann transfer equations (outward case)::
 
         a_transfer = (r1 + r2) / 2
         v_transfer_peri = sqrt(mu * (2/r1 - 1/a_transfer))
@@ -326,39 +352,58 @@ def calculate_hohmann(
         :class:`HohmannResult` with ΔV and transfer time values.
 
     Raises:
-        ValueError: If *parking_altitude* is negative or *target_sma* is not
-            larger than the parking orbit radius.
+        ValueError: If *parking_altitude* is negative or parking orbit radius
+            and *target_sma* are identical (zero-ΔV transfer).
     """
     if parking_altitude < 0:
         raise ValueError(f"Parking altitude must be non-negative: {parking_altitude}")
 
-    r1 = body.radius + parking_altitude
-    r2 = target_sma
+    r_parking = body.radius + parking_altitude
+    r_target = target_sma
 
-    if r2 <= r1:
-        raise ValueError(f"Target SMA ({r2} m) must be larger than parking orbit radius ({r1} m)")
+    if math.isclose(r_parking, r_target, rel_tol=1e-12):
+        raise ValueError(
+            f"Parking orbit radius ({r_parking} m) and target SMA ({r_target} m) "
+            "are identical; Hohmann transfer is undefined"
+        )
+
+    inward = r_target < r_parking
+
+    # For vis-viva, r_inner is the periapsis and r_outer is the apoapsis.
+    r_inner = min(r_parking, r_target)
+    r_outer = max(r_parking, r_target)
 
     mu = body.mu
-    a_transfer = (r1 + r2) / 2.0
+    a_transfer = (r_inner + r_outer) / 2.0
 
-    # Departure burn (periapsis of transfer ellipse).
-    v1_circular = math.sqrt(mu / r1)
-    v_transfer_peri = math.sqrt(mu * (2.0 / r1 - 1.0 / a_transfer))
-    departure_dv = v_transfer_peri - v1_circular
+    # Burn at periapsis of the transfer ellipse.
+    v_inner_circular = math.sqrt(mu / r_inner)
+    v_transfer_peri = math.sqrt(mu * (2.0 / r_inner - 1.0 / a_transfer))
+    dv_peri = v_transfer_peri - v_inner_circular
 
-    # Arrival burn (apoapsis of transfer ellipse).
-    v2_circular = math.sqrt(mu / r2)
-    v_transfer_apo = math.sqrt(mu * (2.0 / r2 - 1.0 / a_transfer))
-    arrival_dv = v2_circular - v_transfer_apo
+    # Burn at apoapsis of the transfer ellipse.
+    v_outer_circular = math.sqrt(mu / r_outer)
+    v_transfer_apo = math.sqrt(mu * (2.0 / r_outer - 1.0 / a_transfer))
+    dv_apo = v_outer_circular - v_transfer_apo
 
     # Transfer time: half the period of the transfer ellipse.
     transfer_time = math.pi * math.sqrt(a_transfer**3 / mu)
+
+    if inward:
+        # Inward: departure is at the outer (parking) orbit, arrival at inner.
+        departure_dv = dv_apo
+        arrival_dv = dv_peri
+    else:
+        # Outward: departure is at the inner (parking) orbit, arrival at outer.
+        departure_dv = dv_peri
+        arrival_dv = dv_apo
 
     return HohmannResult(
         departure_dv=departure_dv,
         arrival_dv=arrival_dv,
         total_dv=departure_dv + arrival_dv,
         transfer_time=transfer_time,
+        inward=inward,
     )
 
 
@@ -367,7 +412,7 @@ def calculate_hohmann(
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class TsiolkovskyResult:
     """Results of the Tsiolkovsky rocket equation.
 
@@ -557,7 +602,7 @@ def landing_dv(body: CelestialBody) -> tuple[float, float | None]:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class DvStep:
     """A single step in a ΔV route.
 
@@ -567,12 +612,14 @@ class DvStep:
         label: Human-readable description of this maneuver.
         dv: ΔV for this step [m/s].
         cumulative: Running total ΔV from mission start [m/s].
+        segment_type: Type of maneuver for display purposes.
         note: Optional supplementary information (e.g. aerobrake alternative).
     """
 
     label: str
     dv: float
     cumulative: float
+    segment_type: SegmentType = SegmentType.TRANSFER
     note: str = ""
 
 
@@ -640,19 +687,32 @@ def compute_route(
     steps: list[DvStep] = []
     cumulative = 0.0
 
-    def _add(label: str, dv: float, note: str = "") -> None:
+    def _add(
+        label: str,
+        dv: float,
+        seg_type: SegmentType = SegmentType.TRANSFER,
+        note: str = "",
+    ) -> None:
         nonlocal cumulative
         cumulative += dv
-        steps.append(DvStep(label=label, dv=dv, cumulative=cumulative, note=note))
+        steps.append(
+            DvStep(
+                label=label,
+                dv=dv,
+                cumulative=cumulative,
+                segment_type=seg_type,
+                note=note,
+            )
+        )
 
     # Step 1: Launch to low orbit.
     lo_alt = low_orbit_altitude(home)
     launch = calculate_launch(home, lo_alt)
-    _add("Launch to low orbit", launch.total_rocket)
+    _add("Launch to low orbit", launch.total_rocket, SegmentType.LAUNCH)
 
     # Step 2: Escape home world.
     esc_home = escape_dv_from_low_orbit(home)
-    _add(f"Escape {home.name}", esc_home)
+    _add(f"Escape {home.name}", esc_home, SegmentType.ESCAPE)
 
     if destination is None:
         # Third cosmic velocity: escape the parent star system from home orbit.
@@ -661,7 +721,7 @@ def compute_route(
         v_esc_star = escape_velocity(parent, home_orbit_alt)
         v_circ_star = circular_velocity(parent, home_orbit_alt)
         esc_star = v_esc_star - v_circ_star
-        _add(f"Escape {parent.name} system", esc_star)
+        _add(f"Escape {parent.name} system", esc_star, SegmentType.SYSTEM_ESCAPE)
         return steps
 
     # destination is set — interplanetary mission.
@@ -673,17 +733,17 @@ def compute_route(
     home_orbit_alt = home_sma - parent.radius
     dest_sma = destination.orbit.semi_major_axis
     hohmann = calculate_hohmann(parent, home_orbit_alt, dest_sma)
-    _add(f"Transfer to {destination.name}", hohmann.departure_dv)
+    _add(f"Transfer to {destination.name}", hohmann.departure_dv, SegmentType.TRANSFER)
 
     # Step 4: Capture at destination.
     esc_dest = escape_dv_from_low_orbit(destination)
-    _add(f"Capture at {destination.name}", esc_dest)
+    _add(f"Capture at {destination.name}", esc_dest, SegmentType.CAPTURE)
 
     if moon is None:
         # Step 5: Land on destination.
         powered_dv, aerobrake_dv = landing_dv(destination)
         note = f"aerobrake option: {aerobrake_dv} m/s" if aerobrake_dv is not None else ""
-        _add(f"Land on {destination.name}", powered_dv, note=note)
+        _add(f"Land on {destination.name}", powered_dv, SegmentType.LANDING, note=note)
         return steps
 
     # Moon mission.
@@ -694,13 +754,13 @@ def compute_route(
     dest_lo_alt = low_orbit_altitude(destination)
     moon_sma = moon.orbit.semi_major_axis
     moon_hohmann = calculate_hohmann(destination, dest_lo_alt, moon_sma)
-    _add(f"Transfer to {moon.name}", moon_hohmann.departure_dv)
+    _add(f"Transfer to {moon.name}", moon_hohmann.departure_dv, SegmentType.MOON_TRANSFER)
 
     # Step 6: Land on moon.
     powered_dv_moon, aerobrake_dv_moon = landing_dv(moon)
     note_moon = (
         f"aerobrake option: {aerobrake_dv_moon} m/s" if aerobrake_dv_moon is not None else ""
     )
-    _add(f"Land on {moon.name}", powered_dv_moon, note=note_moon)
+    _add(f"Land on {moon.name}", powered_dv_moon, SegmentType.MOON_LANDING, note=note_moon)
 
     return steps

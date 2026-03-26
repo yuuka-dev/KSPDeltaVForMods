@@ -6,7 +6,7 @@ system モジュール(天体ツリー構築・設定スキャン)のテスト�
 from __future__ import annotations
 
 from kopdeltav.models import CelestialBody, OrbitalElements
-from kopdeltav.system import build_tree, sort_by_transfer_dv
+from kopdeltav.system import build_tree, is_barycenter, sort_by_transfer_dv
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -258,3 +258,52 @@ class TestSortByTransferDv:
         assert len(results) == 1
         _body, dv = results[0]
         assert dv > 0.0
+
+    def test_inner_planet_included(self) -> None:
+        """An inner planet (smaller SMA) must appear in sorted results."""
+        _star, inner, outer = self._build_system()
+
+        # Sort from outer planet's perspective — inner is the target
+        results = sort_by_transfer_dv(outer, [inner])
+
+        assert len(results) == 1
+        body, dv = results[0]
+        assert body is inner
+        assert dv > 0.0
+
+
+# ---------------------------------------------------------------------------
+# TestIsBarycenter
+# ---------------------------------------------------------------------------
+
+
+class TestIsBarycenter:
+    """Tests for is_barycenter() heuristic."""
+
+    def test_barycenter_detected(self) -> None:
+        """Body with radius < min(children radius) is a barycenter."""
+        bary = _make_body("Chaos", radius=10_000.0)
+        child1 = _make_body("Farewell", radius=500_000.0, reference_body_name="Chaos")
+        child2 = _make_body("Star2", radius=100_000.0, reference_body_name="Chaos")
+        bary.children = [child1, child2]
+        assert is_barycenter(bary) is True
+
+    def test_normal_planet_not_barycenter(self) -> None:
+        """Body with radius > children radius is NOT a barycenter."""
+        planet = _make_body("Planet", radius=600_000.0)
+        moon = _make_body("Moon", radius=200_000.0, reference_body_name="Planet")
+        planet.children = [moon]
+        assert is_barycenter(planet) is False
+
+    def test_no_children_not_barycenter(self) -> None:
+        """Body with no children is NOT a barycenter."""
+        leaf = _make_body("Leaf", radius=100.0)
+        leaf.children = []
+        assert is_barycenter(leaf) is False
+
+    def test_equal_radius_not_barycenter(self) -> None:
+        """Body with radius == child radius is NOT a barycenter (not strictly less)."""
+        body = _make_body("Equal", radius=100_000.0)
+        child = _make_body("Child", radius=100_000.0, reference_body_name="Equal")
+        body.children = [child]
+        assert is_barycenter(body) is False
