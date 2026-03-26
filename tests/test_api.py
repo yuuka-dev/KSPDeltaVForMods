@@ -236,11 +236,23 @@ class TestCalcHohmann:
         assert math.isclose(data["total_dv"], data["departure_dv"] + data["arrival_dv"])
         assert data["transfer_time"] > 0
 
-    def test_target_below_parking_fails(self) -> None:
+    def test_inward_transfer_succeeds(self) -> None:
         _upload_sanctar()
         resp = client.post(
             "/calc/hohmann",
             json={"body_name": "Kerbin", "parking_altitude": 80_000, "target_sma": 700_000},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["departure_dv"] > 0
+        assert data["arrival_dv"] > 0
+        assert data["inward"] is True
+
+    def test_identical_orbits_fails(self) -> None:
+        _upload_sanctar()
+        resp = client.post(
+            "/calc/hohmann",
+            json={"body_name": "Kerbin", "parking_altitude": 80_000, "target_sma": 750_000},
         )
         assert resp.status_code == 400
 

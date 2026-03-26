@@ -148,6 +148,7 @@ class HohmannResponse(BaseModel):
     arrival_dv: float
     total_dv: float
     transfer_time: float
+    inward: bool = False
 
 
 class TsiolkovskyRequest(BaseModel):
@@ -606,6 +607,7 @@ async def calc_hohmann(
         arrival_dv=result.arrival_dv,
         total_dv=result.total_dv,
         transfer_time=result.transfer_time,
+        inward=result.inward,
     )
 
 

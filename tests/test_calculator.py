@@ -291,10 +291,36 @@ class TestCalculateHohmann:
         result = calculate_hohmann(sanctar, 80_000.0, r2)
         assert math.isclose(result.transfer_time, expected_time, rel_tol=1e-9)
 
-    def test_target_below_parking_raises(self) -> None:
+    def test_inward_transfer(self) -> None:
+        """Hohmann transfer to inner orbit (r2 < r1) must work and set inward=True."""
         sanctar = _make_sanctar()
-        with pytest.raises(ValueError, match="larger"):
-            calculate_hohmann(sanctar, 80_000.0, 700_000.0)
+        r_inner = sanctar.radius + 20_000.0
+        result = calculate_hohmann(sanctar, 80_000.0, r_inner)
+        assert result.inward is True
+        assert result.departure_dv > 0
+        assert result.arrival_dv > 0
+        assert math.isclose(result.total_dv, result.departure_dv + result.arrival_dv)
+        assert result.transfer_time > 0
+
+    def test_inward_dv_matches_outward_swapped(self) -> None:
+        """Inward transfer DVs should match outward with departure/arrival swapped."""
+        sanctar = _make_sanctar()
+        r_inner = sanctar.radius + 20_000.0
+        r_outer_sma = sanctar.radius + 80_000.0
+        outward = calculate_hohmann(sanctar, 20_000.0, r_outer_sma)
+        inward = calculate_hohmann(sanctar, 80_000.0, r_inner)
+        assert math.isclose(inward.departure_dv, outward.arrival_dv, rel_tol=1e-9)
+        assert math.isclose(inward.arrival_dv, outward.departure_dv, rel_tol=1e-9)
+        assert math.isclose(inward.total_dv, outward.total_dv, rel_tol=1e-9)
+        assert inward.inward is True
+        assert outward.inward is False
+
+    def test_identical_orbits_raises(self) -> None:
+        """r1 == r2 should raise ValueError."""
+        sanctar = _make_sanctar()
+        r_same = sanctar.radius + 80_000.0
+        with pytest.raises(ValueError, match="identical"):
+            calculate_hohmann(sanctar, 80_000.0, r_same)
 
     def test_negative_parking_raises(self) -> None:
         sanctar = _make_sanctar()

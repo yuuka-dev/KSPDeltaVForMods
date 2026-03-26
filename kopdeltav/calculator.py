@@ -280,7 +280,7 @@ def calculate_launch(body: CelestialBody, target_altitude: float) -> LaunchResul
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class HohmannResult:
     """Results of a Hohmann transfer calculation.
 
@@ -291,12 +291,14 @@ class HohmannResult:
         arrival_dv: ΔV for arrival/capture burn [m/s].
         total_dv: Total ΔV (departure + arrival) [m/s].
         transfer_time: Transfer time (half-period of the transfer ellipse) [s].
+        inward: True if the transfer is to an inner (lower) orbit.
     """
 
     departure_dv: float
     arrival_dv: float
     total_dv: float
     transfer_time: float
+    inward: bool = False
 
 
 def calculate_hohmann(
@@ -308,7 +310,13 @@ def calculate_hohmann(
 
     パーキング軌道からターゲット軌道へのホーマン遷移ΔVを計算する。
 
-    Standard Hohmann transfer equations::
+    Supports both outward (target > parking) and inward (target < parking)
+    transfers.  For inward transfers the vis-viva computation uses the
+    swapped radii internally and the returned departure/arrival ΔVs are
+    swapped so that ``departure_dv`` is the burn at the parking orbit and
+    ``arrival_dv`` is the burn at the target orbit.
+
+    Standard Hohmann transfer equations (outward case)::
 
         a_transfer = (r1 + r2) / 2
         v_transfer_peri = sqrt(mu * (2/r1 - 1/a_transfer))
@@ -326,39 +334,58 @@ def calculate_hohmann(
         :class:`HohmannResult` with ΔV and transfer time values.
 
     Raises:
-        ValueError: If *parking_altitude* is negative or *target_sma* is not
-            larger than the parking orbit radius.
+        ValueError: If *parking_altitude* is negative or parking orbit radius
+            and *target_sma* are identical (zero-ΔV transfer).
     """
     if parking_altitude < 0:
         raise ValueError(f"Parking altitude must be non-negative: {parking_altitude}")
 
-    r1 = body.radius + parking_altitude
-    r2 = target_sma
+    r_parking = body.radius + parking_altitude
+    r_target = target_sma
 
-    if r2 <= r1:
-        raise ValueError(f"Target SMA ({r2} m) must be larger than parking orbit radius ({r1} m)")
+    if math.isclose(r_parking, r_target, rel_tol=1e-12):
+        raise ValueError(
+            f"Parking orbit radius ({r_parking} m) and target SMA ({r_target} m) "
+            "are identical; Hohmann transfer is undefined"
+        )
+
+    inward = r_target < r_parking
+
+    # For vis-viva, r_inner is the periapsis and r_outer is the apoapsis.
+    r_inner = min(r_parking, r_target)
+    r_outer = max(r_parking, r_target)
 
     mu = body.mu
-    a_transfer = (r1 + r2) / 2.0
+    a_transfer = (r_inner + r_outer) / 2.0
 
-    # Departure burn (periapsis of transfer ellipse).
-    v1_circular = math.sqrt(mu / r1)
-    v_transfer_peri = math.sqrt(mu * (2.0 / r1 - 1.0 / a_transfer))
-    departure_dv = v_transfer_peri - v1_circular
+    # Burn at periapsis of the transfer ellipse.
+    v_inner_circular = math.sqrt(mu / r_inner)
+    v_transfer_peri = math.sqrt(mu * (2.0 / r_inner - 1.0 / a_transfer))
+    dv_peri = v_transfer_peri - v_inner_circular
 
-    # Arrival burn (apoapsis of transfer ellipse).
-    v2_circular = math.sqrt(mu / r2)
-    v_transfer_apo = math.sqrt(mu * (2.0 / r2 - 1.0 / a_transfer))
-    arrival_dv = v2_circular - v_transfer_apo
+    # Burn at apoapsis of the transfer ellipse.
+    v_outer_circular = math.sqrt(mu / r_outer)
+    v_transfer_apo = math.sqrt(mu * (2.0 / r_outer - 1.0 / a_transfer))
+    dv_apo = v_outer_circular - v_transfer_apo
 
     # Transfer time: half the period of the transfer ellipse.
     transfer_time = math.pi * math.sqrt(a_transfer**3 / mu)
+
+    if inward:
+        # Inward: departure is at the outer (parking) orbit, arrival at inner.
+        departure_dv = dv_apo
+        arrival_dv = dv_peri
+    else:
+        # Outward: departure is at the inner (parking) orbit, arrival at outer.
+        departure_dv = dv_peri
+        arrival_dv = dv_apo
 
     return HohmannResult(
         departure_dv=departure_dv,
         arrival_dv=arrival_dv,
         total_dv=departure_dv + arrival_dv,
         transfer_time=transfer_time,
+        inward=inward,
     )
 
 
