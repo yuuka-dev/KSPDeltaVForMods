@@ -92,12 +92,16 @@ class TestGetText:
 
     def test_missing_key_in_lang_falls_back_to_english(self) -> None:
         """If a key is missing in the requested language, fall back to English."""
-        # We test by temporarily removing a key from a language.
-        # Instead, we test the fallback mechanism via a key that only exists in en.
-        # The get_text function should fall back to en when the key is missing.
-        _warned_keys.discard("nonexistent_test.fallback_key")
-        result = get_text("nonexistent_test.fallback_key", "id")
-        assert result == "nonexistent_test.fallback_key"
+        from kopdeltav.i18n import _TRANSLATIONS
+
+        # Temporarily add a key that exists only in English.
+        _TRANSLATIONS["en"]["_test_fallback"] = {"only_en": "English value"}
+        _warned_keys.discard("_test_fallback.only_en")
+        try:
+            result = get_text("_test_fallback.only_en", "id")
+            assert result == "English value"
+        finally:
+            del _TRANSLATIONS["en"]["_test_fallback"]
 
     def test_completely_unknown_key_returns_key_string(self) -> None:
         """A key not found in any language returns the key string itself."""

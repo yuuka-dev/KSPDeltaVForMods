@@ -290,7 +290,7 @@ _TRANSLATIONS: dict[str, dict[str, dict[str, str]]] = {
             "warning": "Peringatan",
             "unit_m": "m",
             "unit_ms": "m/s",
-            "unit_s": "d",
+            "unit_s": "s",
             "unit_kg": "kg",
             "unit_kgm3": "kg/m³",
             "unit_kpa": "kPa",
