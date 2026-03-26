@@ -7,12 +7,30 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from kopdeltav.models import G0, CelestialBody, hermite_interp
 
 if TYPE_CHECKING:
     from kopdeltav.system import CelestialSystem
+
+
+class SegmentType(Enum):
+    """Type of a ΔV route segment, used for display coloring.
+
+    ΔVルートセグメントの種別。表示時の色分けに使用。
+    """
+
+    LAUNCH = "launch"
+    ESCAPE = "escape"
+    TRANSFER = "transfer"
+    CAPTURE = "capture"
+    LANDING = "landing"
+    SYSTEM_ESCAPE = "system_escape"
+    MOON_TRANSFER = "moon_transfer"
+    MOON_LANDING = "moon_landing"
+
 
 # Universal gas constant [J/(mol·K)]
 R_GAS: float = 8.314462618
@@ -179,7 +197,7 @@ def surface_density(body: CelestialBody) -> float | None:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class LaunchResult:
     """Results of a launch-to-orbit ΔV calculation.
 
@@ -394,7 +412,7 @@ def calculate_hohmann(
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class TsiolkovskyResult:
     """Results of the Tsiolkovsky rocket equation.
 
@@ -584,7 +602,7 @@ def landing_dv(body: CelestialBody) -> tuple[float, float | None]:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class DvStep:
     """A single step in a ΔV route.
 
@@ -594,12 +612,14 @@ class DvStep:
         label: Human-readable description of this maneuver.
         dv: ΔV for this step [m/s].
         cumulative: Running total ΔV from mission start [m/s].
+        segment_type: Type of maneuver for display purposes.
         note: Optional supplementary information (e.g. aerobrake alternative).
     """
 
     label: str
     dv: float
     cumulative: float
+    segment_type: SegmentType = SegmentType.TRANSFER
     note: str = ""
 
 
@@ -667,19 +687,32 @@ def compute_route(
     steps: list[DvStep] = []
     cumulative = 0.0
 
-    def _add(label: str, dv: float, note: str = "") -> None:
+    def _add(
+        label: str,
+        dv: float,
+        seg_type: SegmentType = SegmentType.TRANSFER,
+        note: str = "",
+    ) -> None:
         nonlocal cumulative
         cumulative += dv
-        steps.append(DvStep(label=label, dv=dv, cumulative=cumulative, note=note))
+        steps.append(
+            DvStep(
+                label=label,
+                dv=dv,
+                cumulative=cumulative,
+                segment_type=seg_type,
+                note=note,
+            )
+        )
 
     # Step 1: Launch to low orbit.
     lo_alt = low_orbit_altitude(home)
     launch = calculate_launch(home, lo_alt)
-    _add("Launch to low orbit", launch.total_rocket)
+    _add("Launch to low orbit", launch.total_rocket, SegmentType.LAUNCH)
 
     # Step 2: Escape home world.
     esc_home = escape_dv_from_low_orbit(home)
-    _add(f"Escape {home.name}", esc_home)
+    _add(f"Escape {home.name}", esc_home, SegmentType.ESCAPE)
 
     if destination is None:
         # Third cosmic velocity: escape the parent star system from home orbit.
@@ -688,7 +721,7 @@ def compute_route(
         v_esc_star = escape_velocity(parent, home_orbit_alt)
         v_circ_star = circular_velocity(parent, home_orbit_alt)
         esc_star = v_esc_star - v_circ_star
-        _add(f"Escape {parent.name} system", esc_star)
+        _add(f"Escape {parent.name} system", esc_star, SegmentType.SYSTEM_ESCAPE)
         return steps
 
     # destination is set — interplanetary mission.
@@ -700,17 +733,17 @@ def compute_route(
     home_orbit_alt = home_sma - parent.radius
     dest_sma = destination.orbit.semi_major_axis
     hohmann = calculate_hohmann(parent, home_orbit_alt, dest_sma)
-    _add(f"Transfer to {destination.name}", hohmann.departure_dv)
+    _add(f"Transfer to {destination.name}", hohmann.departure_dv, SegmentType.TRANSFER)
 
     # Step 4: Capture at destination.
     esc_dest = escape_dv_from_low_orbit(destination)
-    _add(f"Capture at {destination.name}", esc_dest)
+    _add(f"Capture at {destination.name}", esc_dest, SegmentType.CAPTURE)
 
     if moon is None:
         # Step 5: Land on destination.
         powered_dv, aerobrake_dv = landing_dv(destination)
         note = f"aerobrake option: {aerobrake_dv} m/s" if aerobrake_dv is not None else ""
-        _add(f"Land on {destination.name}", powered_dv, note=note)
+        _add(f"Land on {destination.name}", powered_dv, SegmentType.LANDING, note=note)
         return steps
 
     # Moon mission.
@@ -721,13 +754,13 @@ def compute_route(
     dest_lo_alt = low_orbit_altitude(destination)
     moon_sma = moon.orbit.semi_major_axis
     moon_hohmann = calculate_hohmann(destination, dest_lo_alt, moon_sma)
-    _add(f"Transfer to {moon.name}", moon_hohmann.departure_dv)
+    _add(f"Transfer to {moon.name}", moon_hohmann.departure_dv, SegmentType.MOON_TRANSFER)
 
     # Step 6: Land on moon.
     powered_dv_moon, aerobrake_dv_moon = landing_dv(moon)
     note_moon = (
         f"aerobrake option: {aerobrake_dv_moon} m/s" if aerobrake_dv_moon is not None else ""
     )
-    _add(f"Land on {moon.name}", powered_dv_moon, note=note_moon)
+    _add(f"Land on {moon.name}", powered_dv_moon, SegmentType.MOON_LANDING, note=note_moon)
 
     return steps

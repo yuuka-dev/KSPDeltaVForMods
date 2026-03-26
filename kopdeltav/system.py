@@ -17,6 +17,26 @@ from kopdeltav.parser import parse_bodies
 logger = logging.getLogger(__name__)
 
 
+def is_barycenter(body: CelestialBody) -> bool:
+    """Heuristic: detect if a body is likely a system barycenter.
+
+    天体がバリセンタ(重心)かどうかをヒューリスティクスで判定する。
+
+    A body is treated as a barycenter when it has children and its
+    radius is smaller than the smallest child's radius.
+
+    Args:
+        body: The body to check.
+
+    Returns:
+        True if the body is likely a barycenter.
+    """
+    if not body.children:
+        return False
+    min_child_radius = min(c.radius for c in body.children)
+    return body.radius < min_child_radius
+
+
 # ---------------------------------------------------------------------------
 # CelestialSystem
 # ---------------------------------------------------------------------------

@@ -31,6 +31,7 @@ from kopdeltav.models import CelestialBody
 from kopdeltav.parser import parse_bodies
 from kopdeltav.system import (
     CelestialSystem,
+    is_barycenter,
     load_system,
     scan_configs,
     sort_by_transfer_dv,
@@ -240,11 +241,46 @@ def _interactive_mode(system: CelestialSystem) -> None:
 
         dest_body, _ = ranked[idx]
 
-        # Ask for moon selection if destination has children
+        # Ask for moon / sub-body selection if destination has children
         moons = dest_body.children
         moon: CelestialBody | None = None
 
-        if moons:
+        if moons and is_barycenter(dest_body):
+            # Barycenter: must select a sub-body (cannot land on barycenter).
+            print(f"\n{dest_body.name} 系の天体を選択してください:")
+            for j, m in enumerate(moons, 1):
+                m_display = m.display_name if m.display_name != m.name else m.name
+                m_label = f"{m.name} ({m_display})" if m_display != m.name else m.name
+                print(f"  {j}) {m_label}")
+
+            while True:
+                try:
+                    moon_raw = input("天体番号 > ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    break
+
+                if moon_raw == "":
+                    print("  バリセンタには着陸できません。天体を選んでください。")
+                    continue
+
+                try:
+                    moon_idx = int(moon_raw) - 1
+                    if 0 <= moon_idx < len(moons):
+                        moon = moons[moon_idx]
+                        break
+                    else:
+                        print(f"  1〜{len(moons)} の番号を入力してください。")
+                        continue
+                except ValueError:
+                    print(f"  1〜{len(moons)} の番号を入力してください。")
+                    continue
+            else:
+                # while loop ended via break from EOFError/KeyboardInterrupt
+                break
+
+        elif moons:
+            # Normal body with children (moons): offer optional moon selection.
             print(f"\n{dest_body.name} の衛星:")
             for j, m in enumerate(moons, 1):
                 m_display = m.display_name if m.display_name != m.name else m.name
