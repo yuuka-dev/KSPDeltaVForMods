@@ -604,6 +604,41 @@ class TestComputeRoute:
         assert any("Launch" in lbl for lbl in labels)
         assert any("Escape" in lbl for lbl in labels)
 
+    def test_route_to_moon(self) -> None:
+        """Route to a moon has exactly 6 steps and consistent cumulative ΔV."""
+        system, _home, target = _make_minimal_system()
+        # Add a moon to target
+        moon = CelestialBody(
+            name="Moon",
+            radius=100_000.0,
+            gee_asl=0.12,
+            has_ocean=False,
+            atmosphere=None,
+            orbit=OrbitalElements(
+                semi_major_axis=5_000_000.0,
+                eccentricity=0.0,
+                inclination=0.0,
+                argument_of_periapsis=0.0,
+                longitude_of_ascending_node=0.0,
+                mean_anomaly_at_epoch=0.0,
+                epoch=0.0,
+            ),
+            rotational_period=40_000.0,
+            display_name="Moon",
+            reference_body_name="Target",
+        )
+        moon.parent = target
+        target.children.append(moon)
+        system.bodies["Moon"] = moon
+
+        steps = compute_route(system, destination=target, moon=moon)
+        assert len(steps) == 6
+        # Cumulative consistency
+        running = 0.0
+        for step in steps:
+            running += step.dv
+            assert math.isclose(step.cumulative, running, rel_tol=1e-9)
+
     def test_dvstep_dataclass(self) -> None:
         """DvStep dataclass fields are accessible and note defaults to empty."""
         step = DvStep(label="Test burn", dv=100.0, cumulative=200.0)
