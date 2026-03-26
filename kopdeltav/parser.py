@@ -478,27 +478,32 @@ def _extract_has_ocean(body_node: ConfigNode) -> bool:
     return _parse_bool(ocean_node.get_value("ocean"), default=False)
 
 
-def _resolve_display_name(properties: ConfigNode | None, body_name: str) -> str:
-    """Resolve display name, falling back to body name for #LOC_ tags.
+def _resolve_display_name(
+    properties: ConfigNode | None,
+    body_name: str,
+    source_filename: str = "",
+) -> str:
+    """Resolve display name, falling back to filename then body name for #LOC_ tags.
 
-    displayName を解決する。#LOC_ タグの場合は name にフォールバック。
+    displayName を解決する。#LOC_ タグの場合はファイル名、次に name にフォールバック。
 
     Args:
         properties: The Properties child ConfigNode (may be None).
         body_name: The internal body name used as fallback.
+        source_filename: Source .cfg filename (without extension) as preferred fallback.
 
     Returns:
         The resolved display name string.
     """
     if properties is None:
-        return body_name
+        return source_filename or body_name
     display_name = properties.get_value("displayName")
     if display_name is None or display_name.startswith("#LOC_"):
-        return body_name
+        return source_filename or body_name
     return display_name
 
 
-def _extract_body(body_node: ConfigNode) -> CelestialBody | None:
+def _extract_body(body_node: ConfigNode, source_filename: str = "") -> CelestialBody | None:
     """Extract a CelestialBody from a Body-level ConfigNode.
 
     Body ノードから CelestialBody を抽出する。
@@ -508,6 +513,7 @@ def _extract_body(body_node: ConfigNode) -> CelestialBody | None:
 
     Args:
         body_node: A ConfigNode with name ``"Body"``.
+        source_filename: Source .cfg filename (without extension) for display name fallback.
 
     Returns:
         A CelestialBody instance, or None if the node is malformed.
@@ -531,7 +537,7 @@ def _extract_body(body_node: ConfigNode) -> CelestialBody | None:
         properties.get_value("rotationPeriod") if properties else None,
         default=0.0,
     )
-    display_name = _resolve_display_name(properties, name)
+    display_name = _resolve_display_name(properties, name, source_filename)
 
     is_home_world = _parse_bool(
         properties.get_value("isHomeWorld") if properties else None,
@@ -577,7 +583,7 @@ def _extract_body(body_node: ConfigNode) -> CelestialBody | None:
         return None
 
 
-def parse_bodies(source: str) -> list[CelestialBody]:
+def parse_bodies(source: str, source_filename: str = "") -> list[CelestialBody]:
     """Parse Kopernicus config text and extract CelestialBody objects.
 
     Kopernicus 設定テキストをパースし、CelestialBody のリストを返す。
@@ -592,6 +598,8 @@ def parse_bodies(source: str) -> list[CelestialBody]:
 
     Args:
         source: The full text content of a Kopernicus ``.cfg`` file.
+        source_filename: Source filename (without extension) used as display
+            name fallback when ``displayName`` is a ``#LOC_`` tag.
 
     Returns:
         A list of CelestialBody objects found in the config. May be empty
@@ -610,7 +618,7 @@ def parse_bodies(source: str) -> list[CelestialBody]:
         """
         for node in nodes:
             if node.name == "Body":
-                body = _extract_body(node)
+                body = _extract_body(node, source_filename=source_filename)
                 if body is not None:
                     bodies.append(body)
             else:

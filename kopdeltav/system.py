@@ -194,8 +194,6 @@ def sort_by_transfer_dv(
         raise ValueError(f"Origin body '{origin.name}' has no parent")
 
     parent = origin.parent
-    # Parking altitude in parent's reference frame = origin's SMA - parent's radius
-    parking_alt = origin.orbit.semi_major_axis - parent.radius
 
     results: list[tuple[CelestialBody, float]] = []
     for target in targets:
@@ -209,7 +207,11 @@ def sort_by_transfer_dv(
             continue
         target_sma = target.orbit.semi_major_axis
         try:
-            hohmann = calculate_hohmann(parent, parking_alt, target_sma)
+            # Handle inner planets (target SMA < origin SMA) by swapping r1/r2.
+            origin_sma = origin.orbit.semi_major_axis
+            r1_alt = min(origin_sma, target_sma) - parent.radius
+            r2_sma = max(origin_sma, target_sma)
+            hohmann = calculate_hohmann(parent, r1_alt, r2_sma)
         except ValueError as exc:
             logger.warning(
                 "Cannot compute Hohmann transfer to '%s': %s",
@@ -269,7 +271,7 @@ def scan_configs(
             logger.warning("Cannot read '%s': %s", cfg_path, exc)
             continue
 
-        bodies = parse_bodies(source)
+        bodies = parse_bodies(source, source_filename=cfg_path.stem)
         if not bodies:
             logger.debug("No bodies found in '%s'; skipping", cfg_path)
             continue

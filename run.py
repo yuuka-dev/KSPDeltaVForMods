@@ -121,10 +121,8 @@ def _print_home_info(system: CelestialSystem) -> None:
     result = calculate_launch(home, alt)
 
     print("\n=== 恒星系 ===")
-    display = home.display_name if home.display_name != home.name else home.name
-    label = f"{home.name} ({display})" if display != home.name else home.name
     radius_str = _fmt_number(home.radius)
-    print(f"ホームワールド: {label} (半径: {radius_str} m, 重力: {home.gee_asl:.1f}g)")
+    print(f"ホームワールド: {home.display_name} (半径: {radius_str} m, 重力: {home.gee_asl:.1f}g)")
     print()
 
     # Low orbit
@@ -194,9 +192,10 @@ def _interactive_mode(system: CelestialSystem) -> None:
     print()
     print("目的地を選択してください:")
     for i, (body, dv) in enumerate(ranked, 1):
-        display = body.display_name if body.display_name != body.name else body.name
-        label = f"{body.name} ({display})" if display != body.name else body.name
-        print(f"  {i}) {label:<30}  (ΔV: {_fmt_number(dv, 0)} m/s)")
+        # Show "[衛星]" marker if body's parent is not the root star
+        is_moon = body.parent is not None and body.parent is not parent
+        marker = " [衛星]" if is_moon else ""
+        print(f"  {i}) {body.display_name:<30}{marker}  (ΔV: {_fmt_number(dv, 0)} m/s)")
     print("  [Enter] 第三宇宙速度(恒星系脱出)")
     print("  q) 終了")
 
@@ -284,9 +283,9 @@ def _interactive_mode(system: CelestialSystem) -> None:
         print()
         print("目的地を選択してください:")
         for i, (body, dv) in enumerate(ranked, 1):
-            display = body.display_name if body.display_name != body.name else body.name
-            label = f"{body.name} ({display})" if display != body.name else body.name
-            print(f"  {i}) {label:<30}  (ΔV: {_fmt_number(dv, 0)} m/s)")
+            is_moon = body.parent is not None and body.parent is not parent
+            marker = " [衛星]" if is_moon else ""
+            print(f"  {i}) {body.display_name:<30}{marker}  (ΔV: {_fmt_number(dv, 0)} m/s)")
         print("  [Enter] 第三宇宙速度(恒星系脱出)")
         print("  q) 終了")
 
@@ -350,7 +349,7 @@ def _load_interactive() -> None:
             print(f"警告: {cfg_path} の読み込みに失敗しました: {exc}", file=sys.stderr)
             continue
 
-        bodies = parse_bodies(source)
+        bodies = parse_bodies(source, source_filename=cfg_path.stem)
         all_bodies.extend(bodies)
 
     if not all_bodies:
@@ -405,7 +404,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        bodies = parse_bodies(source)
+        bodies = parse_bodies(source, source_filename=cfg_path.stem)
     except Exception as exc:
         print(f"エラー: 設定ファイルの解析に失敗しました: {exc}", file=sys.stderr)
         sys.exit(1)
