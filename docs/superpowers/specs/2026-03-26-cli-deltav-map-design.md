@@ -301,6 +301,8 @@ Beyond the standard template, include:
 - **Windows notes**: ANSI color support (Win10+ native, older → symbols only)
 - **JSON schema**: Brief description of `--format json` output structure
   with link to full schema in docs
+- **KSP2 non-support**: Explicitly state this tool targets KSP1 + Kopernicus only.
+  KSP2 is not supported and there are no plans to support it.
 
 ### 4-C. CHANGELOG
 
