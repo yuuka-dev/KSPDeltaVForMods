@@ -40,3 +40,6 @@ src-tauri/target/
 .ruff_cache/
 htmlcov/
 .coverage
+
+# CLI scan output
+celestial_body/
