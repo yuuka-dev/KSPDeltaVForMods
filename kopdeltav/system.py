@@ -44,6 +44,31 @@ class CelestialSystem:
 # ---------------------------------------------------------------------------
 
 
+def _body_completeness(body: CelestialBody) -> int:
+    """Score how complete a body's data is, for deduplication priority.
+
+    天体データの完全度をスコア化する(重複排除の優先度判定用)。
+
+    Args:
+        body: The body to score.
+
+    Returns:
+        Integer score (higher = more complete).
+    """
+    score = 0
+    if body.is_home_world:
+        score += 100
+    if body.orbit is not None:
+        score += 10
+    if body.reference_body_name:
+        score += 5
+    if body.atmosphere is not None:
+        score += 3
+    if body.radius > 0:
+        score += 1
+    return score
+
+
 def build_tree(bodies: list[CelestialBody]) -> CelestialSystem:
     """Build a parent/children tree from a flat list of bodies.
 
@@ -72,62 +97,71 @@ def build_tree(bodies: list[CelestialBody]) -> CelestialSystem:
     if not bodies:
         raise ValueError("Cannot build tree from an empty body list")
 
-    # Step 1: index by name.
-    index: dict[str, CelestialBody] = {b.name: b for b in bodies}
+    # Step 1: deduplicate by name, preferring the most complete version.
+    # Priority: is_home_world > has orbit > has reference_body_name > first seen.
+    index: dict[str, CelestialBody] = {}
+    for body in bodies:
+        existing = index.get(body.name)
+        if existing is None:
+            index[body.name] = body
+        else:
+            # Prefer the body with more complete data.
+            if _body_completeness(body) > _body_completeness(existing):
+                index[body.name] = body
+                logger.debug(
+                    "Dedup: replacing '%s' with more complete version",
+                    body.name,
+                )
+
+    deduped = list(index.values())
+
+    # Reset parent/children to avoid stale links.
+    for body in deduped:
+        body.parent = None
+        body.children = []
 
     # Step 2: link parent/children; track bodies with unresolved parents.
-    unresolved: list[CelestialBody] = []
-    for body in bodies:
+    for body in deduped:
         ref = body.reference_body_name
         if not ref:
-            # No reference body declared — candidate for root.
             continue
         parent = index.get(ref)
         if parent is None:
-            logger.warning(
-                "Body '%s' references unknown referenceBody '%s'; treating as potential root",
+            logger.debug(
+                "Body '%s' references unknown referenceBody '%s'",
                 body.name,
                 ref,
             )
-            unresolved.append(body)
         else:
             body.parent = parent
             if body not in parent.children:
                 parent.children.append(body)
 
     # Step 3: find root.
-    # Primary criterion: body with orbit == None (star with no orbit node).
+    # Primary: body with no orbit AND no reference_body_name AND has children.
     root: CelestialBody | None = None
-    for body in bodies:
-        if body.orbit is None and not body.reference_body_name:
-            if root is not None:
-                logger.warning(
-                    "Multiple bodies with no orbit found; using first ('%s'), ignoring '%s'",
-                    root.name,
-                    body.name,
-                )
-            else:
-                root = body
+    candidates = [b for b in deduped if b.orbit is None and not b.reference_body_name]
+    if candidates:
+        # Prefer the one with children (actual star, not an orphan body).
+        with_children = [b for b in candidates if b.children]
+        root = with_children[0] if with_children else candidates[0]
 
-    # Fallback: use an unresolved body (its parent name pointed nowhere).
-    if root is None and unresolved:
-        root = unresolved[0]
-        logger.warning(
-            "No orbit-less body found; using unresolved-reference body '%s' as root",
-            root.name,
-        )
-
-    # Last resort: the first body in the list.
+    # Fallback: body with no parent link after tree construction.
     if root is None:
-        root = bodies[0]
+        orphans = [b for b in deduped if b.parent is None and b.children]
+        if orphans:
+            root = orphans[0]
+
+    if root is None:
+        root = deduped[0]
         logger.warning(
-            "Cannot determine root by heuristics; defaulting to first body '%s'",
+            "Cannot determine root; defaulting to first body '%s'",
             root.name,
         )
 
     # Step 4: home world.
     home_world: CelestialBody | None = None
-    for body in bodies:
+    for body in deduped:
         if body.is_home_world:
             home_world = body
             break
@@ -138,7 +172,7 @@ def build_tree(bodies: list[CelestialBody]) -> CelestialSystem:
         )
 
     # Step 5: compute SOI where soi == 0.
-    for body in bodies:
+    for body in deduped:
         if body.soi == 0.0 and body.parent is not None and body.orbit is not None:
             a = body.orbit.semi_major_axis
             m_body = body.mu

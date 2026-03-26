@@ -11,6 +11,7 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -29,6 +30,9 @@ from kopdeltav.calculator import (
 from kopdeltav.models import CelestialBody
 from kopdeltav.parser import parse_bodies
 from kopdeltav.system import CelestialSystem, build_tree, scan_configs, sort_by_transfer_dv
+
+# Suppress noisy debug/info/warning logs from kopdeltav modules in CLI.
+logging.basicConfig(level=logging.ERROR)
 
 CELESTIAL_BODY_DIR = Path("celestial_body")
 
