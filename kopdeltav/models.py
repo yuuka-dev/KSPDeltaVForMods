@@ -116,6 +116,11 @@ class CelestialBody:
         rotational_period: Sidereal rotation period [s].
         display_name: Localized display name (falls back to name).
         soi: Sphere of influence radius [m]. 0 means needs computation.
+        is_home_world: Whether this body is the home world (isHomeWorld in KSP).
+            Used to identify the starting point for ΔV navigation.
+        reference_body_name: Name of the parent body as declared in the Orbit node
+            (``referenceBody``). Empty string for root stars with no orbit.
+            Resolved to ``parent`` during tree construction.
         mu: Gravitational parameter [m^3/s^2]. Auto-derived.
         parent: Parent body. Set during tree construction.
         children: Child bodies. Set during tree construction.
@@ -130,6 +135,8 @@ class CelestialBody:
     rotational_period: float
     display_name: str
     soi: float = 0.0
+    is_home_world: bool = False
+    reference_body_name: str = ""
     mu: float = field(init=False)
     parent: CelestialBody | None = field(default=None, init=False, repr=False)
     children: list[CelestialBody] = field(default_factory=list, init=False, repr=False)

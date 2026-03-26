@@ -1,0 +1,12 @@
+# Core: kopdeltav/ has zero external dependencies
+
+# API
+fastapi>=0.100
+uvicorn[standard]>=0.20
+python-multipart>=0.0.5
+
+# Dev / Test
+pytest>=7.0
+ruff>=0.4
+mypy>=1.0
+httpx>=0.24
