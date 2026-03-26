@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import api as _api_module
 from api import UploadResponse, _bodies, app
 
 SAMPLE_DIR = Path(__file__).resolve().parent.parent / "sample_configs"
@@ -20,12 +21,13 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def _clear_bodies() -> None:  # type: ignore[misc]
-    """Clear the in-memory body store before each test.
+def _clear_state() -> None:  # type: ignore[misc]
+    """Clear the in-memory body store and system before each test.
 
-    各テスト前にボディストアをクリアする。
+    各テスト前にボディストアとシステムをクリアする。
     """
     _bodies.clear()
+    _api_module._system = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -434,3 +436,162 @@ class TestErrorCases:
     def test_accept_language_header(self) -> None:
         resp = client.get("/bodies", headers={"Accept-Language": "ja"})
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# 10. POST /scan
+# ---------------------------------------------------------------------------
+
+
+class TestScanEndpoint:
+    """Tests for the POST /scan endpoint.
+
+    スキャンエンドポイントのテスト。
+    """
+
+    def test_scan_nonexistent_path(self) -> None:
+        """Returns 404 when the path does not exist."""
+        resp = client.post(
+            "/scan",
+            json={"gamedata_path": "/nonexistent/path/that/does/not/exist"},
+        )
+        assert resp.status_code == 404
+
+    def test_scan_file_instead_of_dir(self, tmp_path: Path) -> None:
+        """Returns 404 when the path is a file, not a directory."""
+        f = tmp_path / "not_a_dir.cfg"
+        f.write_text("nothing")
+        resp = client.post("/scan", json={"gamedata_path": str(f)})
+        assert resp.status_code == 404
+
+    def test_scan_empty_dir(self, tmp_path: Path) -> None:
+        """Returns 404 when no cfg files with bodies are found."""
+        resp = client.post("/scan", json={"gamedata_path": str(tmp_path)})
+        assert resp.status_code == 404
+
+    def test_scan_populates_bodies(self) -> None:
+        """Scanning sample_configs/.. populates _bodies from Sanctar.cfg."""
+        resp = client.post(
+            "/scan",
+            json={"gamedata_path": str(SAMPLE_DIR)},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] >= 1
+        assert "Kerbin" in data["bodies_added"]
+        # _bodies should also be populated for backward compatibility.
+        assert "Kerbin" in _bodies
+
+
+# ---------------------------------------------------------------------------
+# 11. GET /system, /system/home, /system/destinations
+# ---------------------------------------------------------------------------
+
+
+class TestSystemEndpoints:
+    """Tests for the system endpoints.
+
+    システムエンドポイントのテスト。
+    """
+
+    def test_system_no_data(self) -> None:
+        """Returns 404 when no system has been loaded."""
+        resp = client.get("/system")
+        assert resp.status_code == 404
+
+    def test_system_home_no_data(self) -> None:
+        """Returns 404 for /system/home when no system loaded."""
+        resp = client.get("/system/home")
+        assert resp.status_code == 404
+
+    def test_system_destinations_no_data(self) -> None:
+        """Returns 404 for /system/destinations when no system loaded."""
+        resp = client.get("/system/destinations")
+        assert resp.status_code == 404
+
+    def test_system_after_scan(self) -> None:
+        """Returns system data after a successful scan."""
+        client.post("/scan", json={"gamedata_path": str(SAMPLE_DIR)})
+        resp = client.get("/system")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "root" in data
+        assert "home_world" in data
+        assert data["body_count"] >= 1
+        assert isinstance(data["tree"], list)
+
+    def test_system_home_after_scan(self) -> None:
+        """Returns home world detail after a successful scan."""
+        client.post("/scan", json={"gamedata_path": str(SAMPLE_DIR)})
+        resp = client.get("/system/home")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "Kerbin"
+
+
+# ---------------------------------------------------------------------------
+# 12. POST /calc/route
+# ---------------------------------------------------------------------------
+
+
+class TestRouteEndpoint:
+    """Tests for the POST /calc/route endpoint.
+
+    ルート計算エンドポイントのテスト。
+    """
+
+    def test_calc_route_no_system(self) -> None:
+        """Returns 404 when no system is loaded."""
+        resp = client.post("/calc/route", json={})
+        assert resp.status_code == 404
+
+    def test_calc_route_unknown_destination(self) -> None:
+        """Returns 404 for an unknown destination body."""
+        client.post("/scan", json={"gamedata_path": str(SAMPLE_DIR)})
+        resp = client.post("/calc/route", json={"destination": "NonExistentPlanet"})
+        assert resp.status_code == 404
+
+    def test_calc_route_moon_without_destination(self) -> None:
+        """Returns 422 when moon is specified without a destination."""
+        client.post("/scan", json={"gamedata_path": str(SAMPLE_DIR)})
+        resp = client.post("/calc/route", json={"moon": "Mun"})
+        assert resp.status_code == 422
+
+    def test_calc_route_escape_only(self) -> None:
+        """Returns 422 when home world has no parent (single-body sample config)."""
+        # Sanctar.cfg declares Kerbin referencing 'Sun', but Sun is not in the
+        # sample config.  build_tree makes Kerbin the root with no parent, so
+        # compute_route raises ValueError → 422.
+        client.post("/scan", json={"gamedata_path": str(SAMPLE_DIR)})
+        resp = client.post("/calc/route", json={})
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# 13. GET /bodies/{name}/moons
+# ---------------------------------------------------------------------------
+
+
+class TestMoonsEndpoint:
+    """Tests for the GET /bodies/{name}/moons endpoint.
+
+    衛星一覧エンドポイントのテスト。
+    """
+
+    def test_moons_no_system(self) -> None:
+        """Returns 404 when no system is loaded."""
+        resp = client.get("/bodies/Kerbin/moons")
+        assert resp.status_code == 404
+
+    def test_moons_unknown_body(self) -> None:
+        """Returns 404 for an unknown body name."""
+        client.post("/scan", json={"gamedata_path": str(SAMPLE_DIR)})
+        resp = client.get("/bodies/NonExistentBody/moons")
+        assert resp.status_code == 404
+
+    def test_moons_after_scan(self) -> None:
+        """Returns a list (possibly empty) of moons for Kerbin."""
+        client.post("/scan", json={"gamedata_path": str(SAMPLE_DIR)})
+        resp = client.get("/bodies/Kerbin/moons")
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)

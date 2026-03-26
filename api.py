@@ -6,6 +6,7 @@ KSPDeltaVForMods の REST API。天体データ管理・ΔV 計算エンドポ�
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Request, UploadFile
@@ -16,12 +17,15 @@ from kopdeltav.calculator import (
     calculate_hohmann,
     calculate_launch,
     calculate_tsiolkovsky,
+    compute_route,
     density_at_altitude,
+    landing_dv,
     surface_density,
 )
 from kopdeltav.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_text
 from kopdeltav.models import CelestialBody, hermite_interp
 from kopdeltav.parser import parse_bodies
+from kopdeltav.system import CelestialSystem, scan_configs, sort_by_transfer_dv
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +34,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _bodies: dict[str, CelestialBody] = {}
+_system: CelestialSystem | None = None
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -204,6 +209,85 @@ class UploadResponse(BaseModel):
     count: int
 
 
+class ScanRequest(BaseModel):
+    """Request to scan a GameData directory for Kopernicus configs.
+
+    GameData ディレクトリをスキャンするリクエスト。
+    """
+
+    gamedata_path: str
+    exclude_dirs: list[str] = ["Kopernicus"]
+
+
+class BodyTreeNode(BaseModel):
+    """A node in the celestial body hierarchy tree.
+
+    天体ツリーの単一ノード。
+    """
+
+    name: str
+    display_name: str
+    children: list[BodyTreeNode]
+
+
+BodyTreeNode.model_rebuild()
+
+
+class SystemResponse(BaseModel):
+    """Response representing the entire celestial system.
+
+    惑星系全体のレスポンス。
+    """
+
+    root: BodySummary
+    home_world: BodyDetail
+    body_count: int
+    tree: list[BodyTreeNode]
+
+
+class DestinationEntry(BaseModel):
+    """A destination body with its transfer ΔV from the home world.
+
+    ホームワールドからの遷移ΔV付き目的地天体。
+    """
+
+    body: BodySummary
+    transfer_dv: float
+
+
+class RouteRequest(BaseModel):
+    """Request for a ΔV route calculation.
+
+    ΔVルート計算リクエスト。
+    """
+
+    destination: str | None = None
+    moon: str | None = None
+
+
+class DvStepResponse(BaseModel):
+    """A single maneuver step in a ΔV route.
+
+    ΔVルートの1マニューバステップ。
+    """
+
+    label: str
+    dv: float
+    cumulative: float
+    note: str = ""
+
+
+class RouteResponse(BaseModel):
+    """Full ΔV route response.
+
+    ΔVルート全体のレスポンス。
+    """
+
+    steps: list[DvStepResponse]
+    total_powered: float
+    total_aerobrake: float | None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -321,6 +405,43 @@ def _body_to_detail(body: CelestialBody) -> BodyDetail:
         soi=body.soi,
         atmosphere=atmo_resp,
         orbit=orbit_resp,
+    )
+
+
+def _require_system() -> CelestialSystem:
+    """Return the loaded CelestialSystem or raise 404.
+
+    ロード済み CelestialSystem を返す。未ロードの場合は 404 を送出。
+
+    Returns:
+        The current CelestialSystem.
+
+    Raises:
+        HTTPException: If no system has been loaded yet (404).
+    """
+    if _system is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No system loaded. Call POST /scan first.",
+        )
+    return _system
+
+
+def _body_to_tree_node(body: CelestialBody) -> BodyTreeNode:
+    """Recursively convert a CelestialBody to a BodyTreeNode.
+
+    CelestialBody を再帰的に BodyTreeNode へ変換する。
+
+    Args:
+        body: The source celestial body.
+
+    Returns:
+        A BodyTreeNode representing the body and its subtree.
+    """
+    return BodyTreeNode(
+        name=body.name,
+        display_name=body.display_name,
+        children=[_body_to_tree_node(child) for child in body.children],
     )
 
 
@@ -564,3 +685,233 @@ async def get_atmo_profile(
         temperature=temperatures,
         density=densities,
     )
+
+
+# ---------------------------------------------------------------------------
+# System endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/scan", response_model=UploadResponse)
+async def scan_gamedata(req: ScanRequest) -> UploadResponse:
+    """Scan a GameData directory for Kopernicus configs and build the system.
+
+    GameData ディレクトリをスキャンして惑星系ツリーを構築する。
+
+    Args:
+        req: ScanRequest containing the path and optional exclusion list.
+
+    Returns:
+        UploadResponse listing discovered body names.
+
+    Raises:
+        HTTPException: 404 if the path does not exist or no configs are found.
+        HTTPException: 422 if the system has no home world.
+    """
+    global _system
+
+    gd_path = Path(req.gamedata_path)
+    if not gd_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"GameData path not found: {req.gamedata_path}",
+        )
+    if not gd_path.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"GameData path is not a directory: {req.gamedata_path}",
+        )
+
+    exclude = frozenset(d.lower() for d in req.exclude_dirs)
+    try:
+        system = scan_configs(gd_path, exclude_dirs=exclude)
+    except ValueError as exc:
+        msg = str(exc)
+        if "No celestial bodies" in msg or "not an existing directory" in msg:
+            raise HTTPException(status_code=404, detail=msg) from None
+        # No home world or build_tree failure → 422
+        raise HTTPException(status_code=422, detail=msg) from None
+
+    _system = system
+    # Also populate _bodies for backward compatibility.
+    _bodies.clear()
+    for name, body in system.bodies.items():
+        _bodies[name] = body
+
+    added = list(system.bodies.keys())
+    return UploadResponse(bodies_added=added, count=len(added))
+
+
+@app.get("/system", response_model=SystemResponse)
+async def get_system() -> SystemResponse:
+    """Return the current celestial system tree.
+
+    現在の惑星系ツリーを返す。
+
+    Returns:
+        SystemResponse with root, home world, body count, and tree.
+
+    Raises:
+        HTTPException: 404 if no system has been loaded.
+    """
+    system = _require_system()
+    root_node = _body_to_tree_node(system.root)
+    return SystemResponse(
+        root=_body_to_summary(system.root),
+        home_world=_body_to_detail(system.home_world),
+        body_count=len(system.bodies),
+        tree=[root_node],
+    )
+
+
+@app.get("/system/home", response_model=BodyDetail)
+async def get_system_home() -> BodyDetail:
+    """Return the home world detail.
+
+    ホームワールドの詳細を返す。
+
+    Returns:
+        BodyDetail of the home world.
+
+    Raises:
+        HTTPException: 404 if no system has been loaded.
+    """
+    system = _require_system()
+    return _body_to_detail(system.home_world)
+
+
+@app.get("/system/destinations", response_model=list[DestinationEntry])
+async def get_system_destinations() -> list[DestinationEntry]:
+    """Return transfer destinations sorted by ΔV from the home world.
+
+    ホームワールドからの遷移ΔV順に目的地一覧を返す。
+
+    Returns:
+        List of DestinationEntry sorted ascending by transfer_dv.
+
+    Raises:
+        HTTPException: 404 if no system has been loaded.
+        HTTPException: 422 if the home world has no orbit or no parent.
+    """
+    system = _require_system()
+    home = system.home_world
+    if home.parent is None or home.orbit is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Home world '{home.name}' has no parent or no orbit; cannot compute transfers.",
+        )
+    siblings = list(home.parent.children)
+    try:
+        sorted_targets = sort_by_transfer_dv(home, siblings)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    return [
+        DestinationEntry(body=_body_to_summary(body), transfer_dv=dv) for body, dv in sorted_targets
+    ]
+
+
+@app.post("/calc/route", response_model=RouteResponse)
+async def calc_route(req: RouteRequest) -> RouteResponse:
+    """Compute a ΔV route from the home world to an optional destination.
+
+    ホームワールドから目的地までのΔVルートを計算する。
+
+    Args:
+        req: RouteRequest with optional destination and moon names.
+
+    Returns:
+        RouteResponse with step-by-step ΔV breakdown.
+
+    Raises:
+        HTTPException: 404 if no system is loaded or a body name is unknown.
+        HTTPException: 422 if the destination/moon combo is invalid.
+    """
+    system = _require_system()
+
+    destination_body = None
+    if req.destination is not None:
+        destination_body = system.bodies.get(req.destination)
+        if destination_body is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown destination body: {req.destination}",
+            )
+
+    moon_body = None
+    if req.moon is not None:
+        if destination_body is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot specify moon without a destination.",
+            )
+        moon_body = system.bodies.get(req.moon)
+        if moon_body is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown moon body: {req.moon}",
+            )
+
+    try:
+        steps = compute_route(system, destination=destination_body, moon=moon_body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    step_responses = [
+        DvStepResponse(
+            label=s.label,
+            dv=s.dv,
+            cumulative=s.cumulative,
+            note=s.note,
+        )
+        for s in steps
+    ]
+    total_powered = steps[-1].cumulative if steps else 0.0
+
+    # Determine aerobrake alternative: check landing step note for aerobrake info.
+    total_aerobrake: float | None = None
+    final_body = moon_body if moon_body is not None else destination_body
+    if final_body is not None and final_body.atmosphere is not None:
+        powered_dv, aerobrake_dv = landing_dv(final_body)
+        if aerobrake_dv is not None:
+            total_aerobrake = total_powered - powered_dv + aerobrake_dv
+
+    return RouteResponse(
+        steps=step_responses,
+        total_powered=total_powered,
+        total_aerobrake=total_aerobrake,
+    )
+
+
+@app.get("/bodies/{name}/moons", response_model=list[DestinationEntry])
+async def get_body_moons(name: str) -> list[DestinationEntry]:
+    """Return the moons of a body sorted by transfer ΔV.
+
+    天体の衛星を遷移ΔV順にソートして返す。
+
+    Args:
+        name: Internal name of the parent body.
+
+    Returns:
+        List of DestinationEntry for each moon, sorted ascending by transfer_dv.
+
+    Raises:
+        HTTPException: 404 if no system is loaded or the body is unknown.
+        HTTPException: 422 if the body has no orbit to compute transfers from.
+    """
+    system = _require_system()
+    body = system.bodies.get(name)
+    if body is None:
+        raise HTTPException(status_code=404, detail=f"Unknown body: {name}")
+
+    if not body.children:
+        return []
+
+    try:
+        sorted_moons = sort_by_transfer_dv(body, list(body.children))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    return [
+        DestinationEntry(body=_body_to_summary(moon), transfer_dv=dv) for moon, dv in sorted_moons
+    ]
