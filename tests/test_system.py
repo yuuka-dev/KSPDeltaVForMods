@@ -259,6 +259,18 @@ class TestSortByTransferDv:
         _body, dv = results[0]
         assert dv > 0.0
 
+    def test_inner_planet_included(self) -> None:
+        """An inner planet (smaller SMA) must appear in sorted results."""
+        _star, inner, outer = self._build_system()
+
+        # Sort from outer planet's perspective — inner is the target
+        results = sort_by_transfer_dv(outer, [inner])
+
+        assert len(results) == 1
+        body, dv = results[0]
+        assert body is inner
+        assert dv > 0.0
+
 
 # ---------------------------------------------------------------------------
 # TestIsBarycenter
