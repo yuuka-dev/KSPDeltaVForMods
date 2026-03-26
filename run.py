@@ -8,18 +8,25 @@ Usage:
     python run.py --scan <GameData_path> Scan GameData and start interactive mode
     python run.py --interactive          Load from celestial_body/ and start interactive
     python run.py --lang en <config.cfg> Specify language (ja/en/id)
+    python run.py --detail --interactive Show detailed route info
+    python run.py --format json ...      Output format (text/md/json)
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import json
 import logging
+import os
+import signal
 import sys
 from pathlib import Path
 
 from kopdeltav.calculator import (
     DvStep,
     LaunchResult,
+    SegmentType,
     calculate_launch,
     compute_route,
     escape_dv_from_low_orbit,
@@ -46,6 +53,107 @@ logging.basicConfig(level=logging.ERROR)
 CELESTIAL_BODY_DIR = Path("celestial_body")
 
 
+# ---------------------------------------------------------------------------
+# Terminal capability detection
+# ---------------------------------------------------------------------------
+
+
+def _supports_color() -> bool:
+    """Detect if terminal supports ANSI color.
+
+    ターミナルがANSIカラーをサポートするか検出する。
+
+    Returns:
+        True if ANSI color codes are likely supported.
+    """
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+        return False
+    if os.environ.get("NO_COLOR"):
+        return False
+    return os.environ.get("TERM", "") != "dumb"
+
+
+def _supports_unicode() -> bool:
+    """Detect if stdout encoding supports Unicode.
+
+    stdout のエンコーディングがUnicodeを扱えるか検出する。
+
+    Returns:
+        True if stdout encoding contains 'utf'.
+    """
+    enc = getattr(sys.stdout, "encoding", "") or ""
+    return "utf" in enc.lower()
+
+
+def _enable_ansi_on_windows() -> None:
+    """Enable ANSI escape codes on Windows 10+.
+
+    Windows 10 以降でANSIエスケープコードを有効にする。
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.GetStdHandle(-11)
+        mode = ctypes.c_ulong()
+        kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+        kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+    except Exception:
+        pass
+
+
+# SIGPIPE handling — allow clean exit when piped to head/less.
+with contextlib.suppress(AttributeError, OSError):
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+
+# ---------------------------------------------------------------------------
+# ANSI color system
+# ---------------------------------------------------------------------------
+
+_COLORS: dict[str, str] = {
+    "green": "\033[32m",
+    "yellow": "\033[33m",
+    "blue": "\033[34m",
+    "cyan": "\033[36m",
+    "red": "\033[31m",
+    "reset": "\033[0m",
+    "bold": "\033[1m",
+}
+
+_SEGMENT_COLORS: dict[str, str] = {
+    "launch": "green",
+    "escape": "yellow",
+    "transfer": "blue",
+    "capture": "cyan",
+    "landing": "red",
+    "system_escape": "yellow",
+    "moon_transfer": "blue",
+    "moon_landing": "red",
+}
+
+
+def _color(text: str, color_name: str, use_color: bool) -> str:
+    """Wrap text with ANSI color codes if color is enabled.
+
+    カラー有効時にANSIカラーコードでテキストを装飾する。
+
+    Args:
+        text: The text to colorize.
+        color_name: Key in _COLORS dict.
+        use_color: Whether to apply color.
+
+    Returns:
+        Colored or plain text.
+    """
+    if not use_color:
+        return text
+    code = _COLORS.get(color_name, "")
+    return f"{code}{text}{_COLORS['reset']}" if code else text
+
+
 def _fmt_number(value: float, decimals: int = 0) -> str:
     """Format a number with thousand separators.
 
@@ -61,6 +169,327 @@ def _fmt_number(value: float, decimals: int = 0) -> str:
     if decimals > 0:
         return f"{value:,.{decimals}f}"
     return f"{value:,.0f}"
+
+
+# ---------------------------------------------------------------------------
+# Subway-map route renderer
+# ---------------------------------------------------------------------------
+
+
+def _format_transfer_time(seconds: float) -> str:
+    """Format transfer time as human-readable days/hours string.
+
+    遷移時間を日/時間の人間可読文字列にフォーマットする。
+
+    Args:
+        seconds: Transfer time in seconds.
+
+    Returns:
+        Formatted string like "42d 6h" or "3h 15m".
+    """
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    if days > 0:
+        return f"{days}d {hours}h"
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def _print_subway_route(
+    steps: list[DvStep],
+    home_name: str,
+    dest_name: str,
+    lang: str,
+    use_color: bool,
+    use_unicode: bool,
+    detail: bool = False,
+) -> None:
+    """Print a subway-map style ΔV route with Unicode/ASCII fallback.
+
+    地下鉄路線図スタイルでΔVルートを表示する。Unicode/ASCIIフォールバック対応。
+
+    Args:
+        steps: Ordered list of DvStep objects.
+        home_name: Display name of the origin body.
+        dest_name: Display name of the destination body.
+        lang: Language code.
+        use_color: Whether to use ANSI colors.
+        use_unicode: Whether to use Unicode symbols.
+        detail: Whether to show expanded detail information.
+    """
+    if not steps:
+        return
+
+    # Symbol definitions
+    if use_unicode:
+        sym_solid = "\u25cf"  # ●
+        sym_hollow = "\u25cb"  # ○
+        sym_up = "\u25b2"  # ▲
+        sym_down = "\u25bc"  # ▼
+        sym_pipe = "\u2502"  # │
+        sym_dash = "\u2500"  # ─
+    else:
+        sym_solid = "(*)"
+        sym_hollow = "(o)"
+        sym_up = "^"
+        sym_down = "v"
+        sym_pipe = "|"
+        sym_dash = "-"
+
+    # Header line
+    header = f"{sym_dash}{sym_dash} \u0394V Route: {home_name} \u2192 {dest_name} "
+    header += sym_dash * max(1, 50 - len(header))
+    print()
+    print(_color(header, "bold", use_color))
+    print()
+
+    # Starting node
+    print(f"  {sym_solid} {home_name} (surface)")
+
+    for i, step in enumerate(steps):
+        seg_color = _SEGMENT_COLORS.get(step.segment_type.value, "reset")
+        is_last = i == len(steps) - 1
+
+        # Determine direction arrow: acceleration (launch/escape/transfer) vs deceleration
+        if step.segment_type in (
+            SegmentType.CAPTURE,
+            SegmentType.LANDING,
+            SegmentType.MOON_LANDING,
+        ):
+            arrow = sym_down
+        else:
+            arrow = sym_up
+
+        # ΔV line
+        dv_str = _fmt_number(step.dv, 0)
+        dv_line = f"  {sym_pipe}  {arrow} {dv_str:>7} {get_text('common.unit_ms', lang)}"
+        dv_line += f"   {step.label}"
+        print(_color(dv_line, seg_color, use_color))
+
+        # Detail sub-items (if enabled)
+        if detail:
+            _print_detail_block(step, lang, use_unicode, use_color)
+
+        # Intermediate node (after each step except the very last LANDING)
+        if not is_last:
+            node_type = _node_after_step(step.segment_type)
+            node_sym = sym_solid if node_type == "solid" else sym_hollow
+            node_label = _node_label(step, lang)
+            print(f"  {node_sym}{sym_dash} {node_label}")
+        else:
+            # Final destination node
+            final_name = dest_name
+            print(f"  {sym_solid} {final_name} (surface)")
+
+    # Total line
+    total_dv = _fmt_number(steps[-1].cumulative, 0)
+    print()
+    total_label = get_text("route.total", lang)
+    unit = get_text("common.unit_ms", lang)
+    print(f"  {total_label}: {_color(total_dv, 'bold', use_color)} {unit}")
+
+
+def _node_after_step(seg_type: SegmentType) -> str:
+    """Determine node type (solid/hollow) after a route segment.
+
+    ルートセグメント後のノードタイプ(実線/中空)を決定する。
+
+    Args:
+        seg_type: The segment type.
+
+    Returns:
+        "solid" for stable positions, "hollow" for SOI boundaries.
+    """
+    if seg_type in (SegmentType.LAUNCH,):
+        return "solid"  # Low orbit
+    if seg_type in (SegmentType.ESCAPE, SegmentType.SYSTEM_ESCAPE):
+        return "hollow"  # SOI edge
+    if seg_type in (SegmentType.TRANSFER, SegmentType.MOON_TRANSFER):
+        return "hollow"  # SOI edge
+    if seg_type in (SegmentType.CAPTURE,):
+        return "solid"  # Low orbit
+    return "solid"
+
+
+def _node_label(step: DvStep, lang: str) -> str:
+    """Generate an appropriate label for the intermediate node after a step.
+
+    ステップ後の中間ノードの適切なラベルを生成する。
+
+    Args:
+        step: The DvStep that was just completed.
+        lang: Language code.
+
+    Returns:
+        A descriptive label for the node.
+    """
+    seg = step.segment_type
+    if seg == SegmentType.LAUNCH:
+        return "Low orbit"
+    if seg in (SegmentType.ESCAPE, SegmentType.SYSTEM_ESCAPE):
+        return "SOI edge"
+    if seg in (SegmentType.TRANSFER, SegmentType.MOON_TRANSFER):
+        return "SOI edge"
+    if seg == SegmentType.CAPTURE:
+        return "Low orbit"
+    return step.label
+
+
+def _print_detail_block(
+    step: DvStep,
+    lang: str,
+    use_unicode: bool,
+    use_color: bool,
+) -> None:
+    """Print detail sub-items for a route step using tree connectors.
+
+    ルートステップの詳細サブ項目をツリーコネクタ付きで表示する。
+
+    Args:
+        step: The DvStep to show details for.
+        lang: Language code.
+        use_unicode: Whether to use Unicode box-drawing characters.
+        use_color: Whether to use ANSI color.
+    """
+    if use_unicode:
+        sym_pipe = "\u2502"  # │
+        sym_corner = "\u2514"  # └
+    else:
+        sym_pipe = "|"
+        sym_corner = "\\"
+
+    # Display note for any segment type that has one.
+    if step.note:
+        print(f"  {sym_pipe}  {sym_corner} {step.note}")
+
+
+# ---------------------------------------------------------------------------
+# Output format: JSON
+# ---------------------------------------------------------------------------
+
+
+def _route_to_json(steps: list[DvStep], home_name: str, dest_name: str) -> str:
+    """Serialize a ΔV route to JSON format.
+
+    ΔVルートをJSON形式にシリアライズする。
+
+    Args:
+        steps: Ordered list of DvStep objects.
+        home_name: Origin body name.
+        dest_name: Destination body name.
+
+    Returns:
+        JSON string with route data.
+    """
+    segments = []
+    for step in steps:
+        seg: dict[str, object] = {
+            "label": step.label,
+            "dv": round(step.dv, 1),
+            "cumulative": round(step.cumulative, 1),
+            "type": step.segment_type.value,
+        }
+        if step.note:
+            seg["note"] = step.note
+        segments.append(seg)
+
+    total_dv = round(steps[-1].cumulative, 1) if steps else 0.0
+    data = {
+        "route": {
+            "from": home_name,
+            "to": dest_name,
+            "total_dv": total_dv,
+            "segments": segments,
+        }
+    }
+    return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# Output format: Markdown
+# ---------------------------------------------------------------------------
+
+
+def _route_to_markdown(
+    steps: list[DvStep],
+    home_name: str,
+    dest_name: str,
+    lang: str,
+) -> str:
+    """Render a ΔV route as a Markdown table.
+
+    ΔVルートをMarkdownテーブルとして整形する。
+
+    Args:
+        steps: Ordered list of DvStep objects.
+        home_name: Origin body name.
+        dest_name: Destination body name.
+        lang: Language code.
+
+    Returns:
+        Markdown-formatted string.
+    """
+    step_hdr = get_text("route.step", lang)
+    dv_hdr = get_text("route.dv", lang)
+    cumul_hdr = get_text("route.cumulative", lang)
+    lines = [
+        f"## \u0394V Route: {home_name} \u2192 {dest_name}",
+        "",
+        f"| # | {step_hdr} | {dv_hdr} | {cumul_hdr} |",
+        "|---|---|---|---|",
+    ]
+    for i, step in enumerate(steps, 1):
+        dv_str = _fmt_number(step.dv, 0)
+        cumul_str = _fmt_number(step.cumulative, 0)
+        note = f" ({step.note})" if step.note else ""
+        lines.append(f"| {i} | {step.label}{note} | {dv_str} m/s | {cumul_str} m/s |")
+
+    if steps:
+        total = _fmt_number(steps[-1].cumulative, 0)
+        total_label = get_text("route.total", lang)
+        lines.append("")
+        lines.append(f"**{total_label}**: {total} m/s")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Route display dispatcher
+# ---------------------------------------------------------------------------
+
+
+def _display_route(
+    steps: list[DvStep],
+    home_name: str,
+    dest_name: str,
+    lang: str,
+    use_color: bool,
+    use_unicode: bool,
+    detail: bool,
+    output_format: str,
+) -> None:
+    """Display a route in the selected format.
+
+    選択されたフォーマットでルートを表示する。
+
+    Args:
+        steps: Ordered list of DvStep objects.
+        home_name: Origin body display name.
+        dest_name: Destination body display name.
+        lang: Language code.
+        use_color: Whether to use ANSI colors.
+        use_unicode: Whether to use Unicode symbols.
+        detail: Whether to show detail blocks.
+        output_format: One of "text", "md", "json".
+    """
+    if output_format == "json":
+        print(_route_to_json(steps, home_name, dest_name))
+    elif output_format == "md":
+        print(_route_to_markdown(steps, home_name, dest_name, lang))
+    else:
+        _print_subway_route(steps, home_name, dest_name, lang, use_color, use_unicode, detail)
 
 
 def _print_body(body: CelestialBody, lang: str) -> None:
@@ -271,7 +700,14 @@ def _print_dest_list(
     print(f"  q) {get_text('common.reset', lang)}")
 
 
-def _interactive_mode(system: CelestialSystem, lang: str) -> None:
+def _interactive_mode(
+    system: CelestialSystem,
+    lang: str,
+    use_color: bool = True,
+    use_unicode: bool = True,
+    detail: bool = False,
+    output_format: str = "text",
+) -> None:
     """Interactive ΔV map navigator using input().
 
     input() を使ったインタラクティブΔVマップナビゲーター。
@@ -279,6 +715,10 @@ def _interactive_mode(system: CelestialSystem, lang: str) -> None:
     Args:
         system: The celestial system to navigate.
         lang: Language code for display strings.
+        use_color: Whether to use ANSI colors.
+        use_unicode: Whether to use Unicode symbols.
+        detail: Whether to show detail blocks in route output.
+        output_format: Output format ("text", "md", "json").
     """
     home = system.home_world
     parent = home.parent
@@ -309,7 +749,18 @@ def _interactive_mode(system: CelestialSystem, lang: str) -> None:
             # Third cosmic velocity
             try:
                 steps = compute_route(system, destination=None)
-                _print_route(steps, lang)
+                home_disp = home.display_name
+                dest_disp = parent.name if parent else "System"
+                _display_route(
+                    steps,
+                    home_disp,
+                    dest_disp,
+                    lang,
+                    use_color,
+                    use_unicode,
+                    detail,
+                    output_format,
+                )
             except ValueError as exc:
                 print(f"{get_text('common.error', lang)}: {exc}", file=sys.stderr)
             continue
@@ -394,7 +845,19 @@ def _interactive_mode(system: CelestialSystem, lang: str) -> None:
 
         try:
             steps = compute_route(system, destination=dest_body, moon=moon)
-            _print_route(steps, lang)
+            final_dest = moon if moon else dest_body
+            home_disp = home.display_name
+            dest_disp = final_dest.display_name
+            _display_route(
+                steps,
+                home_disp,
+                dest_disp,
+                lang,
+                use_color,
+                use_unicode,
+                detail,
+                output_format,
+            )
         except ValueError as exc:
             print(f"{get_text('common.error', lang)}: {exc}", file=sys.stderr)
 
@@ -414,7 +877,14 @@ def _interactive_mode(system: CelestialSystem, lang: str) -> None:
         _print_dest_list(ranked, parent, lang)
 
 
-def _scan_mode(gamedata_path: Path, lang: str) -> None:
+def _scan_mode(
+    gamedata_path: Path,
+    lang: str,
+    use_color: bool = True,
+    use_unicode: bool = True,
+    detail: bool = False,
+    output_format: str = "text",
+) -> None:
     """Scan GameData and start interactive mode.
 
     GameData/ をスキャンして天体ツリーを構築し、インタラクティブモードを開始する。
@@ -422,6 +892,10 @@ def _scan_mode(gamedata_path: Path, lang: str) -> None:
     Args:
         gamedata_path: Path to the GameData/ directory.
         lang: Language code for display strings.
+        use_color: Whether to use ANSI colors.
+        use_unicode: Whether to use Unicode symbols.
+        detail: Whether to show detail blocks.
+        output_format: Output format ("text", "md", "json").
     """
     if not gamedata_path.is_dir():
         print(
@@ -442,16 +916,26 @@ def _scan_mode(gamedata_path: Path, lang: str) -> None:
     n = len(system.bodies)
     print(f"  {n} {get_text('nav.bodies', lang)}")
 
-    _interactive_mode(system, lang)
+    _interactive_mode(system, lang, use_color, use_unicode, detail, output_format)
 
 
-def _load_interactive(lang: str) -> None:
+def _load_interactive(
+    lang: str,
+    use_color: bool = True,
+    use_unicode: bool = True,
+    detail: bool = False,
+    output_format: str = "text",
+) -> None:
     """Load saved system data and start interactive.
 
     保存済みJSONデータを読み込んでインタラクティブモードを開始する。
 
     Args:
         lang: Language code for display strings.
+        use_color: Whether to use ANSI colors.
+        use_unicode: Whether to use Unicode symbols.
+        detail: Whether to show detail blocks.
+        output_format: Output format ("text", "md", "json").
     """
     try:
         system = load_system(CELESTIAL_BODY_DIR)
@@ -474,7 +958,7 @@ def _load_interactive(lang: str) -> None:
         sys.exit(1)
 
     print(f"'{CELESTIAL_BODY_DIR}' -> {len(system.bodies)} {get_text('nav.bodies', lang)}")
-    _interactive_mode(system, lang)
+    _interactive_mode(system, lang, use_color, use_unicode, detail, output_format)
 
 
 def main() -> None:
@@ -491,16 +975,31 @@ def main() -> None:
         choices=list(SUPPORTED_LANGUAGES),
         help="UI language (ja/en/id)",
     )
+    parser.add_argument("--detail", action="store_true", help="Show detailed route info")
+    parser.add_argument(
+        "--format",
+        choices=["text", "md", "json"],
+        default="text",
+        dest="output_format",
+        help="Output format (default: text)",
+    )
     args = parser.parse_args()
 
     lang = detect_language(override=args.lang)
 
+    # Detect terminal capabilities
+    _enable_ansi_on_windows()
+    use_color = _supports_color()
+    use_unicode = _supports_unicode()
+    detail: bool = args.detail
+    output_format: str = args.output_format
+
     if args.scan:
-        _scan_mode(Path(args.scan), lang)
+        _scan_mode(Path(args.scan), lang, use_color, use_unicode, detail, output_format)
         return
 
     if args.interactive:
-        _load_interactive(lang)
+        _load_interactive(lang, use_color, use_unicode, detail, output_format)
         return
 
     if args.config is None:
