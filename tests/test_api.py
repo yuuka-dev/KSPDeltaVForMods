@@ -9,10 +9,13 @@ import math
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-import api as _api_module
-from api import UploadResponse, _bodies, app
+fastapi = pytest.importorskip("fastapi", reason="FastAPI not installed")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import api as _api_module  # noqa: E402
+from api import UploadResponse, _bodies, app  # noqa: E402
 
 SAMPLE_DIR = Path(__file__).resolve().parent.parent / "sample_configs"
 SANCTAR_CFG = SAMPLE_DIR / "Sanctar.cfg"
