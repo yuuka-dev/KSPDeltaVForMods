@@ -105,9 +105,9 @@ def _print_body(body: CelestialBody) -> None:
     print(f"  軌道速度:       {_fmt_number(result.orbital_velocity, 1)} m/s")
     print(f"  重力損失:       {_fmt_number(result.gravity_loss, 1)} m/s")
     print(f"  大気抵抗損失:   {_fmt_number(result.drag_loss, 1)} m/s")
-    print(f"  ロケットΔV:     ≈{_fmt_number(result.total_rocket, 0)} m/s")
+    print(f"  ロケットΔV:     ~{_fmt_number(result.total_rocket, 0)} m/s")
     if result.jet_savings > 0:
-        print(f"  ジェット併用ΔV: ≈{_fmt_number(result.total_with_jets, 0)} m/s")
+        print(f"  ジェット併用ΔV: ~{_fmt_number(result.total_with_jets, 0)} m/s")
 
     print()
 
@@ -130,9 +130,9 @@ def _print_home_info(system: CelestialSystem) -> None:
     print()
 
     # Low orbit
-    rocket_str = f"≈{_fmt_number(result.total_rocket, 0)} m/s (ロケット)"
+    rocket_str = f"~{_fmt_number(result.total_rocket, 0)} m/s (ロケット)"
     if result.jet_savings > 0:
-        jet_str = f" / ≈{_fmt_number(result.total_with_jets, 0)} m/s (ジェット)"
+        jet_str = f" / ~{_fmt_number(result.total_with_jets, 0)} m/s (ジェット)"
     else:
         jet_str = ""
     print(f"[低軌道]  {rocket_str}{jet_str}")

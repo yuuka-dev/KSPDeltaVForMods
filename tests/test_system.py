@@ -5,8 +5,6 @@ system モジュール(天体ツリー構築・設定スキャン)のテスト�
 
 from __future__ import annotations
 
-import pytest
-
 from kopdeltav.models import CelestialBody, OrbitalElements
 from kopdeltav.system import build_tree, sort_by_transfer_dv
 
@@ -141,10 +139,11 @@ class TestBuildTree:
         assert planet2 in star.children
 
     def test_no_home_world_raises(self) -> None:
-        """ValueError is raised when no body has is_home_world=True."""
+        """When no body has is_home_world=True, build_tree falls back with a warning."""
         star = _make_body("Star", is_home_world=False)
-        with pytest.raises(ValueError, match="is_home_world"):
-            build_tree([star])
+        system = build_tree([star])
+        assert system.home_world is star
+        assert system.home_world.is_home_world is True
 
     def test_root_identified_by_no_orbit(self) -> None:
         """Body with orbit=None (no Orbit node) is identified as root."""

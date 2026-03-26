@@ -79,8 +79,9 @@ def build_tree(bodies: list[CelestialBody]) -> CelestialSystem:
         2. Link ``parent`` / ``children`` using ``reference_body_name``.
         3. Identify the root: body with no ``orbit`` (primary star); fallback
            is any body whose ``reference_body_name`` did not resolve.
-        4. Identify ``home_world``: body with ``is_home_world=True``; raises
-           ``ValueError`` when none is found.
+        4. Identify ``home_world``: body with ``is_home_world=True``; when none
+           is found, pick a reasonable fallback (preferring Kerbin-like / habitable
+           bodies) and continue with a warning.
         5. Compute SOI for bodies where ``soi == 0``:
            ``SOI = a * (m_body / m_parent)^(2/5)`` using SMA and mu values.
 
@@ -91,8 +92,7 @@ def build_tree(bodies: list[CelestialBody]) -> CelestialSystem:
         A fully linked :class:`CelestialSystem`.
 
     Raises:
-        ValueError: If *bodies* is empty, no home world is found, or no root
-            can be identified.
+        ValueError: If *bodies* is empty or no root can be identified.
     """
     if not bodies:
         raise ValueError("Cannot build tree from an empty body list")
@@ -165,10 +165,31 @@ def build_tree(bodies: list[CelestialBody]) -> CelestialSystem:
         if body.is_home_world:
             home_world = body
             break
+
     if home_world is None:
-        raise ValueError(
-            "No body with is_home_world=True found. "
-            "At least one body must declare isHomeWorld = True."
+        # Many planet packs omit isHomeWorld. To keep interactive tools usable,
+        # pick a fallback and mark it as home.
+        def _home_score(b: CelestialBody) -> int:
+            score = 0
+            if b.name.strip().lower() == "kerbin":
+                score += 100
+            if b.has_ocean:
+                score += 50
+            if b.atmosphere is not None:
+                score += 30
+            if b.rotational_period > 0.0:
+                score += 10
+            if b.orbit is not None:
+                score += 5
+            if b.parent is not None:
+                score += 2
+            return score
+
+        home_world = max(deduped, key=_home_score)
+        home_world.is_home_world = True
+        logger.warning(
+            "No body declares isHomeWorld=True; falling back to '%s' as home world.",
+            home_world.name,
         )
 
     # Step 5: compute SOI where soi == 0.
