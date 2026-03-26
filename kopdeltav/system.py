@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
+import json
 import logging
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -338,17 +338,12 @@ def scan_configs(
     if not all_bodies:
         raise ValueError(f"No celestial bodies found under '{gamedata_path}'")
 
-    if output_dir is not None:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for cfg_path in valid_cfgs:
-            dest = output_dir / cfg_path.name
-            try:
-                shutil.copy2(cfg_path, dest)
-                logger.debug("Copied '%s' → '%s'", cfg_path, dest)
-            except OSError as exc:
-                logger.warning("Cannot copy '%s' to '%s': %s", cfg_path, dest, exc)
+    system = build_tree(all_bodies)
 
-    return build_tree(all_bodies)
+    if output_dir is not None:
+        save_system(system, output_dir)
+
+    return system
 
 
 def _iter_cfgs(directory: Path, exclude_dirs: frozenset[str]) -> list[Path]:
@@ -380,3 +375,144 @@ def _iter_cfgs(directory: Path, exclude_dirs: frozenset[str]) -> list[Path]:
             results.append(entry)
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# JSON serialization / deserialization
+# ---------------------------------------------------------------------------
+
+_SYSTEM_FILE = "system.json"
+
+
+def save_system(system: CelestialSystem, output_dir: Path) -> None:
+    """Save a CelestialSystem to JSON in *output_dir*.
+
+    パース済み天体データをJSONとして保存する。
+
+    Args:
+        system: The system to save.
+        output_dir: Directory to write ``system.json`` into.
+    """
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    dest = output_dir / _SYSTEM_FILE
+
+    def _body_to_dict(body: CelestialBody) -> dict[str, object]:
+        d: dict[str, object] = {
+            "name": body.name,
+            "display_name": body.display_name,
+            "radius": body.radius,
+            "gee_asl": body.gee_asl,
+            "has_ocean": body.has_ocean,
+            "rotational_period": body.rotational_period,
+            "soi": body.soi,
+            "is_home_world": body.is_home_world,
+            "reference_body_name": body.reference_body_name,
+        }
+        if body.orbit is not None:
+            d["orbit"] = {
+                "semi_major_axis": body.orbit.semi_major_axis,
+                "eccentricity": body.orbit.eccentricity,
+                "inclination": body.orbit.inclination,
+                "argument_of_periapsis": body.orbit.argument_of_periapsis,
+                "longitude_of_ascending_node": body.orbit.longitude_of_ascending_node,
+                "mean_anomaly_at_epoch": body.orbit.mean_anomaly_at_epoch,
+                "epoch": body.orbit.epoch,
+            }
+        if body.atmosphere is not None:
+            atmo = body.atmosphere
+            d["atmosphere"] = {
+                "atmosphere_depth": atmo.atmosphere_depth,
+                "molar_mass": atmo.molar_mass,
+                "adiabatic_index": atmo.adiabatic_index,
+                "pressure_at_sea_level": atmo.pressure_at_sea_level,
+                "temperature_at_sea_level": atmo.temperature_at_sea_level,
+                "pressure_curve": [
+                    [k.position, k.value, k.in_tangent, k.out_tangent] for k in atmo.pressure_curve
+                ],
+                "temperature_curve": [
+                    [k.position, k.value, k.in_tangent, k.out_tangent]
+                    for k in atmo.temperature_curve
+                ],
+            }
+        return d
+
+    data = [_body_to_dict(b) for b in system.bodies.values()]
+    dest.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("Saved %d bodies to '%s'", len(data), dest)
+
+
+def load_system(input_dir: Path) -> CelestialSystem:
+    """Load a CelestialSystem from JSON in *input_dir*.
+
+    保存済みJSONから天体データを読み込みツリーを構築する。
+
+    Args:
+        input_dir: Directory containing ``system.json``.
+
+    Returns:
+        A CelestialSystem built from the saved data.
+
+    Raises:
+        FileNotFoundError: If ``system.json`` does not exist.
+        ValueError: If the file is invalid or tree construction fails.
+    """
+    from kopdeltav.models import Atmosphere, CurveKey, OrbitalElements
+
+    src = input_dir / _SYSTEM_FILE
+    if not src.is_file():
+        raise FileNotFoundError(f"System data not found: {src}")
+
+    raw = json.loads(src.read_text(encoding="utf-8"))
+    bodies: list[CelestialBody] = []
+
+    for item in raw:
+        orbit: OrbitalElements | None = None
+        if "orbit" in item:
+            o = item["orbit"]
+            orbit = OrbitalElements(
+                semi_major_axis=o["semi_major_axis"],
+                eccentricity=o["eccentricity"],
+                inclination=o["inclination"],
+                argument_of_periapsis=o["argument_of_periapsis"],
+                longitude_of_ascending_node=o["longitude_of_ascending_node"],
+                mean_anomaly_at_epoch=o["mean_anomaly_at_epoch"],
+                epoch=o["epoch"],
+            )
+
+        atmosphere: Atmosphere | None = None
+        if "atmosphere" in item:
+            a = item["atmosphere"]
+            atmosphere = Atmosphere(
+                atmosphere_depth=a["atmosphere_depth"],
+                molar_mass=a["molar_mass"],
+                adiabatic_index=a["adiabatic_index"],
+                pressure_at_sea_level=a["pressure_at_sea_level"],
+                temperature_at_sea_level=a["temperature_at_sea_level"],
+                pressure_curve=[
+                    CurveKey(position=k[0], value=k[1], in_tangent=k[2], out_tangent=k[3])
+                    for k in a["pressure_curve"]
+                ],
+                temperature_curve=[
+                    CurveKey(position=k[0], value=k[1], in_tangent=k[2], out_tangent=k[3])
+                    for k in a["temperature_curve"]
+                ],
+            )
+
+        bodies.append(
+            CelestialBody(
+                name=item["name"],
+                display_name=item["display_name"],
+                radius=item["radius"],
+                gee_asl=item["gee_asl"],
+                has_ocean=item["has_ocean"],
+                rotational_period=item["rotational_period"],
+                soi=item.get("soi", 0.0),
+                is_home_world=item.get("is_home_world", False),
+                reference_body_name=item.get("reference_body_name", ""),
+                atmosphere=atmosphere,
+                orbit=orbit,
+            )
+        )
+
+    return build_tree(bodies)

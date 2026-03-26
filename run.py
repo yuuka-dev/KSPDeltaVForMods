@@ -29,7 +29,12 @@ from kopdeltav.calculator import (
 )
 from kopdeltav.models import CelestialBody
 from kopdeltav.parser import parse_bodies
-from kopdeltav.system import CelestialSystem, build_tree, scan_configs, sort_by_transfer_dv
+from kopdeltav.system import (
+    CelestialSystem,
+    load_system,
+    scan_configs,
+    sort_by_transfer_dv,
+)
 
 # Suppress noisy debug/info/warning logs from kopdeltav modules in CLI.
 logging.basicConfig(level=logging.ERROR)
@@ -322,13 +327,15 @@ def _scan_mode(gamedata_path: Path) -> None:
 
 
 def _load_interactive() -> None:
-    """Load from celestial_body/ and start interactive.
+    """Load saved system data and start interactive.
 
-    celestial_body/ ディレクトリのデータを読み込んでインタラクティブモードを開始する。
+    保存済みJSONデータを読み込んでインタラクティブモードを開始する。
     """
-    if not CELESTIAL_BODY_DIR.is_dir():
+    try:
+        system = load_system(CELESTIAL_BODY_DIR)
+    except FileNotFoundError:
         print(
-            f"エラー: '{CELESTIAL_BODY_DIR}' ディレクトリが見つかりません。",
+            f"エラー: '{CELESTIAL_BODY_DIR}' にデータが見つかりません。",
             file=sys.stderr,
         )
         print(
@@ -336,34 +343,8 @@ def _load_interactive() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
-
-    cfg_files = list(CELESTIAL_BODY_DIR.glob("*.cfg"))
-    if not cfg_files:
-        print(
-            f"エラー: '{CELESTIAL_BODY_DIR}' に .cfg ファイルが見つかりません。",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    all_bodies: list[CelestialBody] = []
-    for cfg_path in sorted(cfg_files):
-        try:
-            source = cfg_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            print(f"警告: {cfg_path} の読み込みに失敗しました: {exc}", file=sys.stderr)
-            continue
-
-        bodies = parse_bodies(source, source_filename=cfg_path.stem)
-        all_bodies.extend(bodies)
-
-    if not all_bodies:
-        print("エラー: 天体が見つかりませんでした。", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        system = build_tree(all_bodies)
     except ValueError as exc:
-        print(f"エラー: 天体ツリーの構築に失敗しました: {exc}", file=sys.stderr)
+        print(f"エラー: データの読み込みに失敗しました: {exc}", file=sys.stderr)
         sys.exit(1)
 
     print(f"'{CELESTIAL_BODY_DIR}' から {len(system.bodies)} 天体を読み込みました。")
