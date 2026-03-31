@@ -31,17 +31,17 @@ fn main() {
                 .expect("Failed to resolve resource directory");
 
             let resources = resource_dir.join("resources");
-            let api_path = resources.join("api.py");
+            let launcher_path = resources.join("launcher.py");
 
             let python = find_python().expect(
                 "Python not found. Install Python 3.10+ and ensure it is on PATH.",
             );
 
             eprintln!("[tauri] Python: {}", python);
-            eprintln!("[tauri] API: {}", api_path.display());
+            eprintln!("[tauri] Launcher: {}", launcher_path.display());
 
             let child = Command::new(&python)
-                .arg(&api_path)
+                .arg(&launcher_path)
                 .current_dir(&resources)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())

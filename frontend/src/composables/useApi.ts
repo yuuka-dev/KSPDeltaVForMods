@@ -49,7 +49,7 @@ async function request<T>(
 
 /** Wait for the backend to become available (used by Tauri on startup). */
 export async function waitForBackend(
-  maxRetries = 30,
+  maxRetries = 60,
   intervalMs = 1000,
 ): Promise<boolean> {
   for (let i = 0; i < maxRetries; i++) {
