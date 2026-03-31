@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-31
+
+### Added
+
+#### GUI Frontend
+- Vue 3 + Vite + TypeScript SPA with PrimeVue Aura Dark theme
+- 8 pages: Upload, Bodies List, Body Detail, Launch ΔV, Hohmann Transfer, Tsiolkovsky Calculator, D3.js Route Map, Settings
+- Interactive D3.js subway-map style ΔV route visualization
+- vue-i18n internationalization (ja / en / id)
+
+#### Tauri Desktop App
+- Tauri v2 desktop application wrapping the Vue frontend
+- Windows `.exe` installer distributed via GitHub Releases
+- Spawns Python backend as a child process at runtime
+- Python 3.10+ required on the host machine
+
+#### API
+- `GET /health` endpoint for process health checks
+
+#### CI/CD
+- Frontend type-check and build step added to CI workflow
+- Windows release workflow for automated Tauri binary builds
+
 ## [0.2.0] - 2026-03-26
 
 ### Added
