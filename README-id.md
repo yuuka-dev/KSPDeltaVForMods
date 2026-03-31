@@ -22,6 +22,8 @@ Peta delta-v tersedia untuk KSP vanilla, tetapi tidak untuk mod planet pack. Jik
 - **Pemodelan Atmosfer** -- Interpolasi cubic Hermite spline yang kompatibel dengan AnimationCurve KSP
 - **CLI Interaktif** -- Navigasi pohon benda langit dan hitung rute antar benda langit
 - **Pemindai GameData** -- Memindai direktori GameData KSP secara rekursif dan menyimpan data yang di-parse sebagai JSON
+- **Frontend GUI** -- SPA Vue 3 dengan 8 halaman dan visualisasi rute ΔV gaya peta subway interaktif menggunakan D3.js
+- **Aplikasi Desktop** -- Executable Windows dari Tauri v2; tidak perlu menginstal toolchain frontend
 
 ## Tumpukan Teknologi
 
@@ -29,17 +31,21 @@ Peta delta-v tersedia untuk KSP vanilla, tetapi tidak untuk mod planet pack. Jik
 |---------|-----------|---------|
 | Library Inti | Python 3.10+ | Tanpa dependensi eksternal |
 | CLI | Python standalone | `python run.py` -- tidak perlu pip install |
-| Backend API | FastAPI + Uvicorn | Direncanakan |
-| Frontend | Vue 3 + Vite + TypeScript | Direncanakan |
-| Desktop | Tauri v2 (Rust) | Direncanakan |
+| Backend API | FastAPI + Uvicorn | Swagger UI tersedia di `/docs` |
+| Frontend | Vue 3 + Vite + TypeScript | PrimeVue Aura Dark, vue-i18n (ja/en/id), D3.js |
+| Desktop | Tauri v2 (Rust) | `.exe` Windows via GitHub Releases |
 
 ## Memulai
 
 ### Prasyarat
 
-- Python 3.10 atau lebih baru
+- Python 3.10 atau lebih baru (wajib untuk semua mode termasuk aplikasi desktop)
 
-### Penggunaan
+### Aplikasi Desktop
+
+Unduh installer `.exe` Windows terbaru dari [GitHub Releases](https://github.com/yuuka-dev/KSPDeltaVForMods/releases). Python 3.10+ harus terinstal di mesin Anda -- aplikasi akan menjalankan backend Python secara otomatis.
+
+### Penggunaan CLI
 
 ```bash
 git clone https://github.com/yuuka-dev/KSPDeltaVForMods.git
@@ -52,6 +58,17 @@ Anda juga dapat menghitung delta-v untuk satu file konfigurasi:
 
 ```bash
 python run.py sample_configs/Sanctar.cfg
+```
+
+### Pengembangan Frontend
+
+```bash
+# Jalankan backend API
+pip install -e ".[api,dev]"
+uvicorn api:app --reload --port 8000
+
+# Jalankan dev server frontend
+cd frontend && pnpm install && pnpm dev
 ```
 
 ## Catatan KSP2
