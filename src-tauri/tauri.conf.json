@@ -26,10 +26,7 @@
   "bundle": {
     "resources": {
       "../api.py": ".",
-      "../kopdeltav": "kopdeltav",
-      "../run.py": ".",
-      "../pyproject.toml": ".",
-      "../sample_configs": "sample_configs"
+      "../kopdeltav": "kopdeltav"
     }
   }
 }
