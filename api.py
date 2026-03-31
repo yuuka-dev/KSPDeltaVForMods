@@ -469,6 +469,15 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 
+@app.get("/health")
+async def health_check() -> dict[str, str]:
+    """Lightweight health-check for Tauri startup probe.
+
+    Tauri スタートアップ検証用の軽量ヘルスチェック。
+    """
+    return {"status": "ok"}
+
+
 @app.get("/bodies", response_model=list[BodySummary])
 async def list_bodies(
     request: Request,
