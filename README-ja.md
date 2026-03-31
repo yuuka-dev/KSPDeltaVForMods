@@ -22,6 +22,8 @@ KSPDeltaVForMods は Kopernicus の `.cfg` ファイルを解析し、低軌道�
 - **大気モデリング** -- KSP の AnimationCurve 互換の3次エルミート補間
 - **対話型 CLI** -- 天体ツリーをナビゲートし、天体間のルート計算が可能
 - **GameData スキャナー** -- KSP GameData ディレクトリを再帰的にスキャンし、JSON として保存
+- **GUI フロントエンド** -- Vue 3 SPA。8ページ構成、D3.js 地下鉄路線図スタイルの ΔV ルートマップ付き
+- **デスクトップアプリ** -- Tauri v2 Windows exe。フロントエンドのツールチェーンは不要
 
 ## 技術スタック
 
@@ -29,17 +31,21 @@ KSPDeltaVForMods は Kopernicus の `.cfg` ファイルを解析し、低軌道�
 |---------|------|------|
 | コアライブラリ | Python 3.10+ | 外部依存ゼロ |
 | CLI | Python 単体実行 | `python run.py` -- pip 不要 |
-| バックエンド API | FastAPI + Uvicorn | 予定 |
-| フロントエンド | Vue 3 + Vite + TypeScript | 予定 |
-| デスクトップ | Tauri v2 (Rust) | 予定 |
+| バックエンド API | FastAPI + Uvicorn | `/docs` で Swagger UI |
+| フロントエンド | Vue 3 + Vite + TypeScript | PrimeVue Aura Dark、vue-i18n (ja/en/id)、D3.js |
+| デスクトップ | Tauri v2 (Rust) | GitHub Releases で Windows exe 配布 |
 
 ## はじめ方
 
 ### 前提条件
 
-- Python 3.10 以上
+- Python 3.10 以上（デスクトップアプリを含む全モードで必須）
 
-### 使い方
+### デスクトップアプリ
+
+最新の Windows `.exe` インストーラーは [GitHub Releases](https://github.com/yuuka-dev/KSPDeltaVForMods/releases) からダウンロードできます。アプリが Python バックエンドを自動起動するため、Python 3.10+ のインストールが必要です。
+
+### CLI の使い方
 
 ```bash
 git clone https://github.com/yuuka-dev/KSPDeltaVForMods.git
@@ -52,6 +58,17 @@ python run.py --interactive
 
 ```bash
 python run.py sample_configs/Sanctar.cfg
+```
+
+### フロントエンド開発
+
+```bash
+# バックエンド API を起動
+pip install -e ".[api,dev]"
+uvicorn api:app --reload --port 8000
+
+# フロントエンド開発サーバーを起動
+cd frontend && pnpm install && pnpm dev
 ```
 
 ## KSP2 について

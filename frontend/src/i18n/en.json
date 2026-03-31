@@ -14,7 +14,11 @@
     "dropzone": "Drop or select a .cfg file",
     "scanning": "Scanning...",
     "success": "Loaded {count} celestial bodies",
-    "error": "Failed to load file"
+    "error": "Failed to load file",
+    "scanTitle": "Scan GameData Folder",
+    "scanPath": "GameData Path",
+    "scanButton": "Scan",
+    "scanPlaceholder": "Enter path to KSP GameData folder"
   },
   "body": {
     "name": "Body Name",
