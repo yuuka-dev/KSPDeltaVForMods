@@ -43,7 +43,7 @@ jobs:
         run: cargo install tauri-cli --version "^2"
 
       - name: Build Tauri app
-        run: cargo tauri build
+        run: cargo tauri build --bundles nsis,msi
         working-directory: src-tauri
 
       - name: Upload artifacts
