@@ -43,16 +43,14 @@ jobs:
         run: cargo install tauri-cli --version "^2"
 
       - name: Build Tauri app
-        run: cargo tauri build --bundles nsis,msi
+        run: cargo tauri build --bundles nsis
         working-directory: src-tauri
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-installers
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
+          path: src-tauri/target/release/bundle/nsis/*.exe
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -60,6 +58,4 @@ jobs:
           draft: true
           name: "KSPDeltaVForMods ${{ github.ref_name }}"
           body: "Windows desktop build. Requires Python 3.10+ on PATH."
-          files: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
+          files: src-tauri/target/release/bundle/nsis/*.exe
