@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/refs/heads/v2/crates/tauri-utils/schema.json",
+  "productName": "KSPDeltaVForMods",
+  "version": "0.1.0",
+  "identifier": "com.kspdeltavformods.app",
+  "build": {
+    "frontendDist": "../frontend/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "cd ../frontend && pnpm dev",
+    "beforeBuildCommand": "cd ../frontend && pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "KSPDeltaVForMods",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:8000; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:"
+    }
+  }
+}
