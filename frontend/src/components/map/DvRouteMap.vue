@@ -19,6 +19,7 @@ const mapContainer = ref<HTMLElement | null>(null)
 // Loading states
 const loadingMap = ref(false)
 const calculating = ref(false)
+const loadError = ref(false)
 
 // Data
 const destinations = ref<DestinationEntry[]>([])
@@ -53,6 +54,7 @@ onMounted(async () => {
 
     render(system.tree, system.root, system.home_world.name, dests)
   } catch (err) {
+    loadError.value = true
     api.handleError(err)
   } finally {
     loadingMap.value = false
@@ -107,12 +109,15 @@ async function calcRoute(): Promise<void> {
     <!-- Map card -->
     <div class="map-card">
       <ProgressBar v-if="loadingMap" mode="indeterminate" style="height: 4px" />
+      <div v-if="loadError" class="map-placeholder map-error">
+        {{ t('common.error') }}
+      </div>
       <div
         ref="mapContainer"
         class="map-container"
         :aria-label="t('map.title')"
       />
-      <div v-if="!loadingMap && destOptions.length === 0" class="map-placeholder">
+      <div v-if="!loadingMap && !loadError && destOptions.length === 0" class="map-placeholder">
         {{ t('common.notLoaded') }}
       </div>
     </div>

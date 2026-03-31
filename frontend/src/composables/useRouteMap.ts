@@ -75,8 +75,10 @@ export function buildNodes(
   const links: MapLink[] = []
 
   const dvMap = new Map<string, number>()
+  const atmosphereMap = new Map<string, boolean>()
   for (const entry of destinations) {
     dvMap.set(entry.body.name, entry.transfer_dv)
+    atmosphereMap.set(entry.body.name, entry.body.has_atmosphere)
   }
 
   // Insert the root star node
@@ -97,7 +99,7 @@ export function buildNodes(
         id: treeNode.name,
         name: treeNode.name,
         displayName: treeNode.display_name,
-        hasAtmosphere: false, // BodyTreeNode doesn't carry atmosphere info; updated below
+        hasAtmosphere: atmosphereMap.get(treeNode.name) ?? false,
         isHomeWorld: treeNode.name === homeWorldName,
         isStar,
         children: treeNode.children.map((c) => c.name),
@@ -128,6 +130,7 @@ export function useRouteMap(
   let simulation: d3.Simulation<MapNode, MapLink> | null = null
   let svgEl: SVGSVGElement | null = null
   let linkSelection: d3.Selection<SVGLineElement, MapLink, SVGGElement, unknown> | null = null
+  let currentNodes: MapNode[] = []
 
   /**
    * Clear the previous SVG, build fresh simulation & render.
@@ -153,6 +156,7 @@ export function useRouteMap(
     const height = container.clientHeight || 500
 
     const { nodes, links } = buildNodes(tree, root, homeWorldName, destinations)
+    currentNodes = nodes
 
     // Create SVG
     const svg = d3
@@ -298,14 +302,26 @@ export function useRouteMap(
    */
   function highlightRoute(steps: DvStepResponse[]): void {
     if (!linkSelection) return
-    const labels = new Set(steps.map((s) => s.label))
 
-    linkSelection.attr('stroke', (d: MapLink) => {
-      const sourceId = typeof d.source === 'object' ? (d.source as MapNode).id : String(d.source)
-      const targetId = typeof d.target === 'object' ? (d.target as MapNode).id : String(d.target)
-      const matchesLabel = labels.has(sourceId) || labels.has(targetId)
-      return matchesLabel ? COLOR_ROUTE : '#4b5563'
-    })
+    // Build set of body names mentioned in route steps
+    const mentionedBodies = new Set<string>()
+    for (const step of steps) {
+      for (const node of currentNodes) {
+        if (step.label.includes(node.id)) {
+          mentionedBodies.add(node.id)
+        }
+      }
+    }
+
+    linkSelection
+      .attr('stroke', (d: MapLink) => {
+        const targetId = typeof d.target === 'object' ? (d.target as MapNode).id : String(d.target)
+        return mentionedBodies.has(targetId) ? COLOR_ROUTE : '#4b5563'
+      })
+      .attr('stroke-width', (d: MapLink) => {
+        const targetId = typeof d.target === 'object' ? (d.target as MapNode).id : String(d.target)
+        return mentionedBodies.has(targetId) ? 4 : 2
+      })
   }
 
   /**
@@ -316,6 +332,7 @@ export function useRouteMap(
     simulation?.stop()
     simulation = null
     linkSelection = null
+    currentNodes = []
     if (svgEl) {
       svgEl.remove()
       svgEl = null
