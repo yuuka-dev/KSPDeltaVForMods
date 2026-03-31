@@ -54,6 +54,19 @@ def _upload_sanctar() -> UploadResponse:
 # ---------------------------------------------------------------------------
 
 
+class TestHealth:
+    """Tests for the GET /health endpoint.
+
+    ヘルスチェックエンドポイントのテスト。
+    """
+
+    def test_health_endpoint(self) -> None:
+        """Verify /health returns status ok."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+
 class TestListBodies:
     """Tests for the GET /bodies endpoint.
 
