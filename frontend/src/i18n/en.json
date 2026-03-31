@@ -27,7 +27,14 @@
     "soi": "Sphere of Influence",
     "rotationalPeriod": "Rotational Period",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "atmosphereDepth": "Atmosphere Depth",
+    "pressureAsl": "Pressure (Sea Level)",
+    "temperatureAsl": "Temperature (Sea Level)",
+    "seaLevelDensity": "Sea Level Density",
+    "semiMajorAxis": "Semi-Major Axis",
+    "eccentricity": "Eccentricity",
+    "inclination": "Inclination"
   },
   "launch": {
     "title": "Launch to Orbit ΔV",

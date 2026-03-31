@@ -27,7 +27,14 @@
     "soi": "影響圏",
     "rotationalPeriod": "自転周期",
     "yes": "あり",
-    "no": "なし"
+    "no": "なし",
+    "atmosphereDepth": "大気高度",
+    "pressureAsl": "海面気圧",
+    "temperatureAsl": "海面温度",
+    "seaLevelDensity": "海面密度",
+    "semiMajorAxis": "軌道長半径",
+    "eccentricity": "離心率",
+    "inclination": "軌道傾斜角"
   },
   "launch": {
     "title": "低軌道投入ΔV計算",

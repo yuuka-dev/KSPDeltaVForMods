@@ -99,19 +99,19 @@ function formatSeconds(sec: number): string {
             <table class="detail-table">
               <tbody>
                 <tr>
-                  <th>{{ t('body.atmosphere') }} Depth</th>
+                  <th>{{ t('body.atmosphereDepth') }}</th>
                   <td>{{ body.atmosphere.atmosphere_depth.toLocaleString() }} {{ t('common.unit_m') }}</td>
                 </tr>
                 <tr>
-                  <th>Pressure (ASL)</th>
+                  <th>{{ t('body.pressureAsl') }}</th>
                   <td>{{ body.atmosphere.pressure_at_sea_level.toFixed(3) }} kPa</td>
                 </tr>
                 <tr>
-                  <th>Temperature (ASL)</th>
+                  <th>{{ t('body.temperatureAsl') }}</th>
                   <td>{{ body.atmosphere.temperature_at_sea_level.toFixed(1) }} K</td>
                 </tr>
                 <tr v-if="body.atmosphere.sea_level_density !== null">
-                  <th>Sea Level Density</th>
+                  <th>{{ t('body.seaLevelDensity') }}</th>
                   <td>{{ body.atmosphere.sea_level_density!.toFixed(4) }} kg/m³</td>
                 </tr>
               </tbody>
@@ -123,15 +123,15 @@ function formatSeconds(sec: number): string {
             <table class="detail-table">
               <tbody>
                 <tr>
-                  <th>Semi-Major Axis</th>
+                  <th>{{ t('body.semiMajorAxis') }}</th>
                   <td>{{ body.orbit.semi_major_axis.toLocaleString() }} {{ t('common.unit_m') }}</td>
                 </tr>
                 <tr>
-                  <th>Eccentricity</th>
+                  <th>{{ t('body.eccentricity') }}</th>
                   <td>{{ body.orbit.eccentricity.toFixed(5) }}</td>
                 </tr>
                 <tr>
-                  <th>Inclination</th>
+                  <th>{{ t('body.inclination') }}</th>
                   <td>{{ body.orbit.inclination.toFixed(3) }}°</td>
                 </tr>
               </tbody>
