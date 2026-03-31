@@ -40,26 +40,18 @@ fn main() {
             eprintln!("[tauri] Python: {}", python);
             eprintln!("[tauri] Launcher: {}", launcher_path.display());
 
+            // Use Stdio::null — launcher.py writes its own log file.
+            // IMPORTANT: Do NOT use Stdio::piped() without reading,
+            // as a full pipe buffer will block the child process.
             let child = Command::new(&python)
                 .arg(&launcher_path)
                 .current_dir(&resources)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
                 .spawn();
 
             match child {
-                Ok(mut proc) => {
-                    if let Some(stderr) = proc.stderr.take() {
-                        std::thread::spawn(move || {
-                            use std::io::BufRead;
-                            let reader = std::io::BufReader::new(stderr);
-                            for line in reader.lines() {
-                                if let Ok(l) = line {
-                                    eprintln!("[python] {}", l);
-                                }
-                            }
-                        });
-                    }
+                Ok(proc) => {
                     app.manage(PythonProcess(Mutex::new(Some(proc))));
                 }
                 Err(e) => {
