@@ -2,12 +2,12 @@
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/refs/heads/v2/crates/tauri-utils/schema.json",
   "productName": "KSPDeltaVForMods",
   "version": "0.1.0",
-  "identifier": "com.kspdeltavformods.app",
+  "identifier": "com.kspdeltavformods.desktop",
   "build": {
     "frontendDist": "../frontend/dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "cd ../frontend && pnpm dev",
-    "beforeBuildCommand": "cd ../frontend && pnpm build"
+    "beforeBuildCommand": ""
   },
   "app": {
     "windows": [
