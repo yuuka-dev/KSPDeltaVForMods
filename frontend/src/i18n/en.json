@@ -1,0 +1,92 @@
+{
+  "nav": {
+    "title": "KSPDeltaVForMods",
+    "upload": "Upload",
+    "bodies": "Bodies",
+    "launch": "Launch ΔV",
+    "hohmann": "Hohmann Transfer",
+    "tsiolkovsky": "Tsiolkovsky",
+    "map": "ΔV Route Map",
+    "settings": "Settings"
+  },
+  "upload": {
+    "title": "Load Config File",
+    "dropzone": "Drop or select a .cfg file",
+    "scanning": "Scanning...",
+    "success": "Loaded {count} celestial bodies",
+    "error": "Failed to load file"
+  },
+  "body": {
+    "name": "Body Name",
+    "radius": "Radius",
+    "gravity": "Surface Gravity",
+    "mu": "Gravitational Parameter",
+    "atmosphere": "Atmosphere",
+    "ocean": "Ocean",
+    "orbit": "Orbital Elements",
+    "soi": "Sphere of Influence",
+    "rotationalPeriod": "Rotational Period",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "launch": {
+    "title": "Launch to Orbit ΔV",
+    "bodyName": "Body",
+    "targetAltitude": "Target Altitude (m)",
+    "orbitalVelocity": "Orbital Velocity",
+    "gravityLoss": "Gravity Loss",
+    "dragLoss": "Drag Loss",
+    "totalIdeal": "Theoretical Minimum ΔV",
+    "totalRocket": "Practical ΔV (Rocket)",
+    "jetSavings": "Jet Savings",
+    "totalWithJets": "Practical ΔV (With Jets)",
+    "calculate": "Calculate"
+  },
+  "hohmann": {
+    "title": "Hohmann Transfer ΔV",
+    "bodyName": "Central Body",
+    "parkingAltitude": "Parking Orbit Altitude (m)",
+    "targetSma": "Target Semi-Major Axis (m)",
+    "departureDv": "Departure ΔV",
+    "arrivalDv": "Arrival ΔV",
+    "totalDv": "Total ΔV",
+    "transferTime": "Transfer Time",
+    "inward": "Inward Transfer",
+    "calculate": "Calculate"
+  },
+  "tsiolkovsky": {
+    "title": "Tsiolkovsky Rocket Equation",
+    "deltaV": "Required ΔV (m/s)",
+    "isp": "Specific Impulse (s)",
+    "wetMass": "Wet Mass (kg)",
+    "massRatio": "Mass Ratio",
+    "fuelFraction": "Fuel Fraction",
+    "dryMass": "Dry Mass",
+    "fuelMass": "Fuel Mass",
+    "calculate": "Calculate"
+  },
+  "map": {
+    "title": "ΔV Route Map",
+    "selectOrigin": "Select Origin",
+    "selectDestination": "Select Destination",
+    "totalDv": "Total ΔV",
+    "zoomIn": "Zoom In",
+    "zoomOut": "Zoom Out",
+    "resetView": "Reset View"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languageDescription": "Select display language"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "unit_m": "m",
+    "unit_ms": "m/s",
+    "unit_s": "s",
+    "unit_kg": "kg",
+    "unit_g": "g",
+    "notLoaded": "No config file loaded"
+  }
+}

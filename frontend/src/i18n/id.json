@@ -1,0 +1,92 @@
+{
+  "nav": {
+    "title": "KSPDeltaVForMods",
+    "upload": "Unggah",
+    "bodies": "Benda Langit",
+    "launch": "ΔV Peluncuran",
+    "hohmann": "Transfer Hohmann",
+    "tsiolkovsky": "Tsiolkovsky",
+    "map": "Peta Rute ΔV",
+    "settings": "Pengaturan"
+  },
+  "upload": {
+    "title": "Muat Berkas Konfigurasi",
+    "dropzone": "Seret atau pilih berkas .cfg",
+    "scanning": "Memindai...",
+    "success": "Memuat {count} benda langit",
+    "error": "Gagal memuat berkas"
+  },
+  "body": {
+    "name": "Nama Benda",
+    "radius": "Radius",
+    "gravity": "Gravitasi Permukaan",
+    "mu": "Parameter Gravitasi",
+    "atmosphere": "Atmosfer",
+    "ocean": "Lautan",
+    "orbit": "Elemen Orbit",
+    "soi": "Bola Pengaruh",
+    "rotationalPeriod": "Periode Rotasi",
+    "yes": "Ya",
+    "no": "Tidak"
+  },
+  "launch": {
+    "title": "ΔV Peluncuran ke Orbit",
+    "bodyName": "Benda",
+    "targetAltitude": "Ketinggian Target (m)",
+    "orbitalVelocity": "Kecepatan Orbit",
+    "gravityLoss": "Kehilangan Gravitasi",
+    "dragLoss": "Kehilangan Hambatan",
+    "totalIdeal": "ΔV Minimum Teoritis",
+    "totalRocket": "ΔV Praktis (Roket)",
+    "jetSavings": "Penghematan Jet",
+    "totalWithJets": "ΔV Praktis (Dengan Jet)",
+    "calculate": "Hitung"
+  },
+  "hohmann": {
+    "title": "ΔV Transfer Hohmann",
+    "bodyName": "Benda Pusat",
+    "parkingAltitude": "Ketinggian Orbit Parkir (m)",
+    "targetSma": "Sumbu Semi-Mayor Target (m)",
+    "departureDv": "ΔV Keberangkatan",
+    "arrivalDv": "ΔV Kedatangan",
+    "totalDv": "Total ΔV",
+    "transferTime": "Waktu Transfer",
+    "inward": "Transfer ke Dalam",
+    "calculate": "Hitung"
+  },
+  "tsiolkovsky": {
+    "title": "Persamaan Roket Tsiolkovsky",
+    "deltaV": "ΔV Dibutuhkan (m/s)",
+    "isp": "Impuls Spesifik (s)",
+    "wetMass": "Massa Basah (kg)",
+    "massRatio": "Rasio Massa",
+    "fuelFraction": "Fraksi Bahan Bakar",
+    "dryMass": "Massa Kering",
+    "fuelMass": "Massa Bahan Bakar",
+    "calculate": "Hitung"
+  },
+  "map": {
+    "title": "Peta Rute ΔV",
+    "selectOrigin": "Pilih Asal",
+    "selectDestination": "Pilih Tujuan",
+    "totalDv": "Total ΔV",
+    "zoomIn": "Perbesar",
+    "zoomOut": "Perkecil",
+    "resetView": "Reset Tampilan"
+  },
+  "settings": {
+    "title": "Pengaturan",
+    "language": "Bahasa",
+    "languageDescription": "Pilih bahasa tampilan"
+  },
+  "common": {
+    "loading": "Memuat...",
+    "error": "Terjadi kesalahan",
+    "unit_m": "m",
+    "unit_ms": "m/s",
+    "unit_s": "s",
+    "unit_kg": "kg",
+    "unit_g": "g",
+    "notLoaded": "Berkas konfigurasi belum dimuat"
+  }
+}
