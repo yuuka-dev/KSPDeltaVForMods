@@ -1,17 +1,30 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::process::{Command, Stdio};
+use std::sync::Mutex;
 use tauri::Manager;
-use tauri_plugin_shell::ShellExt;
+
+struct PythonProcess(Mutex<Option<std::process::Child>>);
+
+fn find_python() -> Option<String> {
+    for cmd in ["python", "py", "python3"] {
+        if Command::new(cmd)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+        {
+            return Some(cmd.to_string());
+        }
+    }
+    None
+}
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let shell = app.shell();
-
-            // In dev mode, api.py is at the project root (../../api.py from src-tauri/)
-            // In production, resources are bundled next to the exe
             let resource_dir = app
                 .path()
                 .resource_dir()
@@ -20,31 +33,53 @@ fn main() {
             let resources = resource_dir.join("resources");
             let api_path = resources.join("api.py");
 
-            let (mut rx, _child) = shell
-                .command("python")
-                .args([api_path.to_string_lossy().to_string()])
-                .current_dir(&resources)
-                .spawn()
-                .expect("Failed to spawn Python API server");
+            let python = find_python().expect(
+                "Python not found. Install Python 3.10+ and ensure it is on PATH.",
+            );
 
-            tauri::async_runtime::spawn(async move {
-                while let Some(event) = rx.recv().await {
-                    match event {
-                        tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
-                            println!("[python:stdout] {}", String::from_utf8_lossy(&line));
-                        }
-                        tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
-                            eprintln!("[python:stderr] {}", String::from_utf8_lossy(&line));
-                        }
-                        tauri_plugin_shell::process::CommandEvent::Terminated(status) => {
-                            eprintln!("[python] Process terminated: {:?}", status);
-                        }
-                        _ => {}
+            eprintln!("[tauri] Python: {}", python);
+            eprintln!("[tauri] API: {}", api_path.display());
+
+            let child = Command::new(&python)
+                .arg(&api_path)
+                .current_dir(&resources)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn();
+
+            match child {
+                Ok(mut proc) => {
+                    if let Some(stderr) = proc.stderr.take() {
+                        std::thread::spawn(move || {
+                            use std::io::BufRead;
+                            let reader = std::io::BufReader::new(stderr);
+                            for line in reader.lines() {
+                                if let Ok(l) = line {
+                                    eprintln!("[python] {}", l);
+                                }
+                            }
+                        });
                     }
+                    app.manage(PythonProcess(Mutex::new(Some(proc))));
                 }
-            });
+                Err(e) => {
+                    eprintln!("[tauri] Failed to spawn Python: {}", e);
+                    app.manage(PythonProcess(Mutex::new(None)));
+                }
+            }
 
             Ok(())
+        })
+        .on_event(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<PythonProcess>() {
+                    if let Ok(mut guard) = state.0.lock() {
+                        if let Some(ref mut proc) = *guard {
+                            let _ = proc.kill();
+                        }
+                    }
+                }
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
