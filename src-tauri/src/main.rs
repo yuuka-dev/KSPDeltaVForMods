@@ -9,9 +9,20 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let shell = app.shell();
+
+            // In dev mode, api.py is at the project root (../../api.py from src-tauri/)
+            // In production, resources are bundled next to the exe
+            let resource_dir = app
+                .path()
+                .resource_dir()
+                .expect("Failed to resolve resource directory");
+
+            let api_path = resource_dir.join("api.py");
+
             let (mut rx, _child) = shell
                 .command("python")
-                .args(["api.py"])
+                .args([api_path.to_string_lossy().to_string()])
+                .current_dir(&resource_dir)
                 .spawn()
                 .expect("Failed to spawn Python API server");
 

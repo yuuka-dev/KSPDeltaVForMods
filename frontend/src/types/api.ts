@@ -130,6 +130,11 @@ export interface UploadResponse {
   count: number
 }
 
+export interface ScanRequest {
+  gamedata_path: string
+  exclude_dirs: string[]
+}
+
 // --- Atmosphere profile ---
 
 export interface AtmoProfileResponse {

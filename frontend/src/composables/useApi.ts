@@ -10,6 +10,7 @@ import type {
   LaunchResponse,
   RouteRequest,
   RouteResponse,
+  ScanRequest,
   SystemResponse,
   TsiolkovskyRequest,
   TsiolkovskyResponse,
@@ -65,6 +66,9 @@ export function useApi(lang?: string) {
       }
       return response.json() as Promise<UploadResponse>
     },
+
+    scan: (req: ScanRequest) =>
+      request<UploadResponse>('/scan', { method: 'POST', body: JSON.stringify(req) }),
 
     calcLaunch: (req: LaunchRequest) =>
       request<LaunchResponse>('/calc/launch', { method: 'POST', body: JSON.stringify(req) }, lang),

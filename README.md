@@ -22,6 +22,8 @@ Delta-v maps exist for stock KSP, but not for modded planet packs. If you instal
 - **Atmosphere Modeling** -- Cubic Hermite spline interpolation compatible with KSP's AnimationCurve
 - **Interactive CLI** -- Navigate the celestial body tree and compute routes between bodies
 - **GameData Scanner** -- Recursively scans a KSP GameData directory and persists parsed data as JSON
+- **GUI Frontend** -- Vue 3 SPA with 8 pages and interactive D3.js subway-map ΔV route visualization
+- **Desktop App** -- Tauri v2 Windows executable, no separate install of frontend tooling required
 
 ## Tech Stack
 
@@ -29,17 +31,21 @@ Delta-v maps exist for stock KSP, but not for modded planet packs. If you instal
 |-------|-----------|-------|
 | Core Library | Python 3.10+ | Zero external dependencies |
 | CLI | Python standalone | `python run.py` -- no pip install required |
-| Backend API | FastAPI + Uvicorn | Planned |
-| Frontend | Vue 3 + Vite + TypeScript | Planned |
-| Desktop | Tauri v2 (Rust) | Planned |
+| Backend API | FastAPI + Uvicorn | REST API with Swagger UI at `/docs` |
+| Frontend | Vue 3 + Vite + TypeScript | PrimeVue Aura Dark, vue-i18n (ja/en/id), D3.js |
+| Desktop | Tauri v2 (Rust) | Windows `.exe` via GitHub Releases |
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.10 or later
+- Python 3.10 or later (required for all modes including the desktop app)
 
-### Usage
+### Desktop App
+
+Download the latest Windows `.exe` installer from [GitHub Releases](https://github.com/yuuka-dev/KSPDeltaVForMods/releases). Python 3.10+ must be installed on your machine -- the app spawns the Python backend automatically.
+
+### CLI Usage
 
 ```bash
 git clone https://github.com/yuuka-dev/KSPDeltaVForMods.git
@@ -52,6 +58,17 @@ You can also calculate delta-v for a single config file:
 
 ```bash
 python run.py sample_configs/Sanctar.cfg
+```
+
+### Frontend Development
+
+```bash
+# Start the backend API
+pip install -e ".[api,dev]"
+uvicorn api:app --reload --port 8000
+
+# Start the frontend dev server
+cd frontend && pnpm install && pnpm dev
 ```
 
 ## KSP2 Note

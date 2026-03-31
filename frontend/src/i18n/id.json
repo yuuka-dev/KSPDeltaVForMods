@@ -14,7 +14,11 @@
     "dropzone": "Seret atau pilih berkas .cfg",
     "scanning": "Memindai...",
     "success": "Memuat {count} benda langit",
-    "error": "Gagal memuat berkas"
+    "error": "Gagal memuat berkas",
+    "scanTitle": "Pindai Folder GameData",
+    "scanPath": "Jalur GameData",
+    "scanButton": "Pindai",
+    "scanPlaceholder": "Masukkan jalur folder GameData KSP"
   },
   "body": {
     "name": "Nama Benda",

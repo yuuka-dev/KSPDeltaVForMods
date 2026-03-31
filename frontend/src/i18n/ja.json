@@ -14,7 +14,11 @@
     "dropzone": ".cfg ファイルをドロップまたは選択",
     "scanning": "スキャン中...",
     "success": "{count} 個の天体を読み込みました",
-    "error": "ファイルの読み込みに失敗しました"
+    "error": "ファイルの読み込みに失敗しました",
+    "scanTitle": "GameData フォルダをスキャン",
+    "scanPath": "GameData パス",
+    "scanButton": "スキャン",
+    "scanPlaceholder": "KSP GameData フォルダのパスを入力"
   },
   "body": {
     "name": "天体名",
