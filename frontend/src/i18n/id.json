@@ -79,7 +79,17 @@
     "totalDv": "Total ΔV",
     "zoomIn": "Perbesar",
     "zoomOut": "Perkecil",
-    "resetView": "Reset Tampilan"
+    "resetView": "Reset Tampilan",
+    "calculate": "Hitung Rute",
+    "routeResult": "Hasil Rute",
+    "step": "Langkah",
+    "dv": "ΔV (m/s)",
+    "cumulative": "ΔV Kumulatif (m/s)",
+    "note": "Catatan",
+    "totalPowered": "Total ΔV Propulsi",
+    "totalAerobrake": "Penghematan Aerobrake",
+    "noRoute": "Pilih tujuan untuk menghitung rute",
+    "loadingMap": "Memuat peta..."
   },
   "settings": {
     "title": "Pengaturan",
