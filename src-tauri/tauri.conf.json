@@ -24,9 +24,9 @@
     }
   },
   "bundle": {
-    "resources": {
-      "../api.py": ".",
-      "../kopdeltav": "kopdeltav"
-    }
+    "resources": [
+      "resources/*",
+      "resources/kopdeltav/*"
+    ]
   }
 }

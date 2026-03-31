@@ -42,6 +42,13 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
 
+      - name: Copy Python backend into Tauri resources
+        run: |
+          mkdir -p src-tauri/resources/kopdeltav
+          cp api.py src-tauri/resources/
+          cp kopdeltav/*.py src-tauri/resources/kopdeltav/
+        shell: bash
+
       - name: Build Tauri app
         run: cargo tauri build --bundles nsis
         working-directory: src-tauri

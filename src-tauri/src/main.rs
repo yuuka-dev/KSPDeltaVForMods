@@ -17,12 +17,13 @@ fn main() {
                 .resource_dir()
                 .expect("Failed to resolve resource directory");
 
-            let api_path = resource_dir.join("api.py");
+            let resources = resource_dir.join("resources");
+            let api_path = resources.join("api.py");
 
             let (mut rx, _child) = shell
                 .command("python")
                 .args([api_path.to_string_lossy().to_string()])
-                .current_dir(&resource_dir)
+                .current_dir(&resources)
                 .spawn()
                 .expect("Failed to spawn Python API server");
 
