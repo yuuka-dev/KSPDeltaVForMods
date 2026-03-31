@@ -79,7 +79,17 @@
     "totalDv": "合計ΔV",
     "zoomIn": "拡大",
     "zoomOut": "縮小",
-    "resetView": "表示リセット"
+    "resetView": "表示リセット",
+    "calculate": "ルート計算",
+    "routeResult": "ルート計算結果",
+    "step": "ステップ",
+    "dv": "ΔV (m/s)",
+    "cumulative": "累積 ΔV (m/s)",
+    "note": "備考",
+    "totalPowered": "合計推進ΔV",
+    "totalAerobrake": "エアロブレーキ節約分",
+    "noRoute": "目的地を選択してルートを計算してください",
+    "loadingMap": "マップを読み込み中..."
   },
   "settings": {
     "title": "設定",

@@ -79,7 +79,17 @@
     "totalDv": "Total ΔV",
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out",
-    "resetView": "Reset View"
+    "resetView": "Reset View",
+    "calculate": "Calculate Route",
+    "routeResult": "Route Results",
+    "step": "Step",
+    "dv": "ΔV (m/s)",
+    "cumulative": "Cumulative ΔV (m/s)",
+    "note": "Note",
+    "totalPowered": "Total Powered ΔV",
+    "totalAerobrake": "Aerobrake Savings",
+    "noRoute": "Select a destination to calculate a route",
+    "loadingMap": "Loading map..."
   },
   "settings": {
     "title": "Settings",
