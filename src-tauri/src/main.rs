@@ -70,17 +70,17 @@ fn main() {
 
             Ok(())
         })
-        .on_event(|app, event| {
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app: &tauri::AppHandle, event: tauri::RunEvent| {
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<PythonProcess>() {
                     if let Ok(mut guard) = state.0.lock() {
-                        if let Some(ref mut proc) = *guard {
+                        if let Some(proc) = guard.as_mut() {
                             let _ = proc.kill();
                         }
                     }
                 }
             }
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        });
 }
