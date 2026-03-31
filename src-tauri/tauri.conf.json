@@ -25,7 +25,8 @@
   },
   "bundle": {
     "resources": [
-      "resources/*",
+      "resources/*.py",
+      "resources/*.txt",
       "resources/kopdeltav/*"
     ]
   }
