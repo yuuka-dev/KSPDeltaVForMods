@@ -27,7 +27,14 @@
     "soi": "Bola Pengaruh",
     "rotationalPeriod": "Periode Rotasi",
     "yes": "Ya",
-    "no": "Tidak"
+    "no": "Tidak",
+    "atmosphereDepth": "Kedalaman Atmosfer",
+    "pressureAsl": "Tekanan Permukaan Laut",
+    "temperatureAsl": "Suhu Permukaan Laut",
+    "seaLevelDensity": "Kepadatan Permukaan Laut",
+    "semiMajorAxis": "Sumbu Semi-Mayor",
+    "eccentricity": "Eksentrisitas",
+    "inclination": "Inklinasi"
   },
   "launch": {
     "title": "ΔV Peluncuran ke Orbit",
