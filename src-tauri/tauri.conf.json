@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/refs/heads/v2/crates/tauri-utils/schema.json",
   "productName": "KSPDeltaVForMods",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "identifier": "com.kspdeltavformods.desktop",
   "build": {
     "frontendDist": "../frontend/dist",
