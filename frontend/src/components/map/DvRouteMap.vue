@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
@@ -24,6 +24,9 @@ const loadError = ref(false)
 // Data
 const destinations = ref<DestinationEntry[]>([])
 const selectedDestination = ref<string | null>(null)
+const moons = ref<DestinationEntry[]>([])
+const selectedMoon = ref<string | null>(null)
+const loadingMoons = ref(false)
 const routeSteps = ref<DvStepResponse[]>([])
 const routeResult = ref<RouteResponse | null>(null)
 
@@ -34,11 +37,12 @@ const { render, highlightRoute } = useRouteMap(mapContainer, {
   },
 })
 
-interface DestOption {
+interface SelectOption {
   label: string
   value: string
 }
-const destOptions = ref<DestOption[]>([])
+const destOptions = ref<SelectOption[]>([])
+const moonOptions = ref<SelectOption[]>([])
 
 onMounted(async () => {
   loadingMap.value = true
@@ -61,6 +65,27 @@ onMounted(async () => {
   }
 })
 
+watch(selectedDestination, async (name) => {
+  selectedMoon.value = null
+  moonOptions.value = []
+  moons.value = []
+  if (!name) return
+
+  loadingMoons.value = true
+  try {
+    const result = await api.getBodyMoons(name)
+    moons.value = result
+    moonOptions.value = result.map((m) => ({
+      label: m.body.display_name,
+      value: m.body.name,
+    }))
+  } catch {
+    // Body may have no moons — non-fatal
+  } finally {
+    loadingMoons.value = false
+  }
+})
+
 async function calcRoute(): Promise<void> {
   if (!selectedDestination.value) return
 
@@ -68,7 +93,7 @@ async function calcRoute(): Promise<void> {
   try {
     const result: RouteResponse = await api.calcRoute({
       destination: selectedDestination.value,
-      moon: null,
+      moon: selectedMoon.value,
     })
     routeResult.value = result
     routeSteps.value = result.steps
@@ -94,6 +119,18 @@ async function calcRoute(): Promise<void> {
           option-label="label"
           option-value="value"
           :placeholder="t('map.selectDestination')"
+          show-clear
+          style="width: 260px"
+        />
+        <Select
+          v-if="moonOptions.length > 0"
+          v-model="selectedMoon"
+          :options="moonOptions"
+          option-label="label"
+          option-value="value"
+          :placeholder="t('map.selectMoon')"
+          :loading="loadingMoons"
+          show-clear
           style="width: 260px"
         />
         <Button

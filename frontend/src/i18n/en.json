@@ -80,6 +80,7 @@
     "title": "ΔV Route Map",
     "selectOrigin": "Select Origin",
     "selectDestination": "Select Destination",
+    "selectMoon": "Select Moon",
     "totalDv": "Total ΔV",
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out",

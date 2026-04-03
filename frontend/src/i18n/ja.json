@@ -80,6 +80,7 @@
     "title": "ΔVルートマップ",
     "selectOrigin": "出発地を選択",
     "selectDestination": "目的地を選択",
+    "selectMoon": "衛星を選択",
     "totalDv": "合計ΔV",
     "zoomIn": "拡大",
     "zoomOut": "縮小",
