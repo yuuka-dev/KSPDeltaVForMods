@@ -926,3 +926,9 @@ async def get_body_moons(name: str) -> list[DestinationEntry]:
     return [
         DestinationEntry(body=_body_to_summary(moon), transfer_dv=dv) for moon, dv in sorted_moons
     ]
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8000)
