@@ -714,6 +714,20 @@ def compute_route(
     esc_home = escape_dv_from_low_orbit(home)
     _add(f"Escape {home.name}", esc_home, SegmentType.ESCAPE)
 
+    if destination is None and moon is not None:
+        # Home world moon mission: launch + transfer to moon + land.
+        if moon.orbit is None:
+            raise ValueError(f"Moon '{moon.name}' has no orbital elements.")
+        moon_sma = moon.orbit.semi_major_axis
+        moon_hohmann = calculate_hohmann(home, lo_alt, moon_sma)
+        _add(f"Transfer to {moon.name}", moon_hohmann.departure_dv, SegmentType.MOON_TRANSFER)
+        powered_dv_moon, aerobrake_dv_moon = landing_dv(moon)
+        note_moon = (
+            f"aerobrake option: {aerobrake_dv_moon} m/s" if aerobrake_dv_moon is not None else ""
+        )
+        _add(f"Land on {moon.name}", powered_dv_moon, SegmentType.MOON_LANDING, note=note_moon)
+        return steps
+
     if destination is None:
         # Third cosmic velocity: escape the parent star system from home orbit.
         home_sma = home.orbit.semi_major_axis

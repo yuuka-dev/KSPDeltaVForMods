@@ -851,11 +851,6 @@ async def calc_route(req: RouteRequest) -> RouteResponse:
 
     moon_body = None
     if req.moon is not None:
-        if destination_body is None:
-            raise HTTPException(
-                status_code=422,
-                detail="Cannot specify moon without a destination.",
-            )
         moon_body = system.bodies.get(req.moon)
         if moon_body is None:
             raise HTTPException(

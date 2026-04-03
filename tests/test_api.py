@@ -579,11 +579,11 @@ class TestRouteEndpoint:
         resp = client.post("/calc/route", json={"destination": "NonExistentPlanet"})
         assert resp.status_code == 404
 
-    def test_calc_route_moon_without_destination(self) -> None:
-        """Returns 422 when moon is specified without a destination."""
+    def test_calc_route_moon_without_destination_unknown_moon(self) -> None:
+        """Returns 404 when moon is unknown (destination=None is now allowed)."""
         client.post("/scan", json={"gamedata_path": str(SAMPLE_DIR)})
         resp = client.post("/calc/route", json={"moon": "Mun"})
-        assert resp.status_code == 422
+        assert resp.status_code == 404
 
     def test_calc_route_escape_only(self) -> None:
         """Returns 422 when home world has no parent (single-body sample config)."""

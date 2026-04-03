@@ -683,26 +683,55 @@ pub fn compute_route(
         String::new(),
     );
 
-    let destination = match destination {
-        Some(d) => d,
-        None => {
-            // Third cosmic velocity: escape the parent star system from home orbit.
-            let home_sma = home_orbit.semi_major_axis;
-            let home_orbit_alt = home_sma - parent.radius;
-            let v_esc_star = escape_velocity(parent, home_orbit_alt);
-            let v_circ_star = circular_velocity(parent, home_orbit_alt);
-            let esc_star = v_esc_star - v_circ_star;
-            add_step(
-                &mut steps,
-                &mut cumulative,
-                format!("Escape {} system", parent.name),
-                esc_star,
-                SegmentType::SystemEscape,
-                String::new(),
-            );
+    // Home world moon mission: destination=None, moon=Some
+    if destination.is_none() {
+        if let Some(moon) = moon {
+            if let Some(moon_orbit) = &moon.orbit {
+                let moon_sma = moon_orbit.semi_major_axis;
+                let moon_hohmann = calculate_hohmann(home, lo_alt, moon_sma);
+                add_step(
+                    &mut steps,
+                    &mut cumulative,
+                    format!("Transfer to {}", moon.name),
+                    moon_hohmann.departure_dv,
+                    SegmentType::MoonTransfer,
+                    String::new(),
+                );
+                let (powered_dv, aerobrake_dv) = landing_dv(moon);
+                let note = match aerobrake_dv {
+                    Some(a) => format!("aerobrake option: {} m/s", a),
+                    None => String::new(),
+                };
+                add_step(
+                    &mut steps,
+                    &mut cumulative,
+                    format!("Land on {}", moon.name),
+                    powered_dv,
+                    SegmentType::MoonLanding,
+                    note,
+                );
+            }
             return steps;
         }
-    };
+
+        // Third cosmic velocity: escape the parent star system from home orbit.
+        let home_sma = home_orbit.semi_major_axis;
+        let home_orbit_alt = home_sma - parent.radius;
+        let v_esc_star = escape_velocity(parent, home_orbit_alt);
+        let v_circ_star = circular_velocity(parent, home_orbit_alt);
+        let esc_star = v_esc_star - v_circ_star;
+        add_step(
+            &mut steps,
+            &mut cumulative,
+            format!("Escape {} system", parent.name),
+            esc_star,
+            SegmentType::SystemEscape,
+            String::new(),
+        );
+        return steps;
+    }
+
+    let destination = destination.unwrap();
 
     let dest_orbit = destination
         .orbit

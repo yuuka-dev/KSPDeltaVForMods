@@ -44,6 +44,9 @@ interface SelectOption {
 const destOptions = ref<SelectOption[]>([])
 const moonOptions = ref<SelectOption[]>([])
 
+// Home world name for fetching its moons on mount
+const homeWorldName = ref<string>('')
+
 onMounted(async () => {
   loadingMap.value = true
   try {
@@ -55,6 +58,19 @@ onMounted(async () => {
       label: d.body.display_name,
       value: d.body.name,
     }))
+    homeWorldName.value = system.home_world.name
+
+    // Load home world moons so they're available when no destination is selected
+    try {
+      const homeMoons = await api.getBodyMoons(system.home_world.name)
+      moons.value = homeMoons
+      moonOptions.value = homeMoons.map((m) => ({
+        label: m.body.display_name,
+        value: m.body.name,
+      }))
+    } catch {
+      // Home world may have no moons — non-fatal
+    }
 
     render(system.tree, system.root, system.home_world.name, dests)
   } catch (err) {
@@ -67,27 +83,33 @@ onMounted(async () => {
 
 watch(selectedDestination, async (name) => {
   selectedMoon.value = null
-  moonOptions.value = []
-  moons.value = []
-  if (!name) return
+
+  // When no destination selected, show home world moons
+  const targetName = name || homeWorldName.value
+  if (!targetName) {
+    moonOptions.value = []
+    moons.value = []
+    return
+  }
 
   loadingMoons.value = true
   try {
-    const result = await api.getBodyMoons(name)
+    const result = await api.getBodyMoons(targetName)
     moons.value = result
     moonOptions.value = result.map((m) => ({
       label: m.body.display_name,
       value: m.body.name,
     }))
   } catch {
-    // Body may have no moons — non-fatal
+    moonOptions.value = []
+    moons.value = []
   } finally {
     loadingMoons.value = false
   }
 })
 
 async function calcRoute(): Promise<void> {
-  if (!selectedDestination.value) return
+  if (!selectedDestination.value && !selectedMoon.value) return
 
   calculating.value = true
   try {
@@ -137,7 +159,7 @@ async function calcRoute(): Promise<void> {
           :label="t('map.calculate')"
           icon="pi pi-send"
           :loading="calculating"
-          :disabled="!selectedDestination || loadingMap"
+          :disabled="(!selectedDestination && !selectedMoon) || loadingMap"
           @click="calcRoute"
         />
       </div>
