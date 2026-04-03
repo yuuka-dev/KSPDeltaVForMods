@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.8] - 2026-04-03
+
+### Added
+- **cd**: add release script with auto-versioning and CHANGELOG generation
+- **frontend**: replace fetch API with Tauri invoke commands
+- **tauri**: implement native commands, remove Python subprocess
+- **rust**: implement CelestialSystem tree and i18n translations
+- **rust**: implement delta-V calculation engine
+- **rust**: implement Kopernicus ConfigNode parser
+- **rust**: add kopdeltav models crate with constants, structs, and hermite interpolation
+
+### Fixed
+- remove waitForBackend and Python copy step from merge conflict resolution
+
+### Documentation
+- add CD pipeline design spec
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
