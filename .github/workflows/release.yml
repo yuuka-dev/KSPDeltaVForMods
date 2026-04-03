@@ -31,6 +31,16 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CONF_VERSION=$(grep -o '"version": "[^"]*"' src-tauri/tauri.conf.json | head -1 | cut -d'"' -f4)
+          if [ "$TAG_VERSION" != "$CONF_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match tauri.conf.json ($CONF_VERSION)"
+            exit 1
+          fi
+        shell: bash
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
         working-directory: frontend
@@ -46,6 +56,19 @@ jobs:
         run: cargo tauri build --bundles nsis
         working-directory: src-tauri
 
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BODY=$(sed -n "/^## \[${VERSION}\]/,/^## \[/{ /^## \[${VERSION}\]/d; /^## \[/d; p; }" CHANGELOG.md)
+          if [ -z "$BODY" ]; then
+            BODY="Release v${VERSION}"
+          fi
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$BODY" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        shell: bash
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -55,7 +78,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
           name: "KSPDeltaVForMods ${{ github.ref_name }}"
-          body: "Windows desktop build. No external dependencies required."
+          body: ${{ steps.changelog.outputs.body }}
           files: src-tauri/target/release/bundle/nsis/*.exe
