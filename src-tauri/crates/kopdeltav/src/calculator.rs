@@ -672,18 +672,7 @@ pub fn compute_route(
         String::new(),
     );
 
-    // Step 2: Escape home world.
-    let esc_home = escape_dv_from_low_orbit(home);
-    add_step(
-        &mut steps,
-        &mut cumulative,
-        format!("Escape {}", home.name),
-        esc_home,
-        SegmentType::Escape,
-        String::new(),
-    );
-
-    // Home world moon mission: destination=None, moon=Some
+    // Home world moon mission: no escape needed, just transfer within SOI.
     if destination.is_none() {
         if let Some(moon) = moon {
             if let Some(moon_orbit) = &moon.orbit {
@@ -714,6 +703,17 @@ pub fn compute_route(
             return steps;
         }
 
+        // Step 2: Escape home world (interplanetary / third cosmic only).
+        let esc_home = escape_dv_from_low_orbit(home);
+        add_step(
+            &mut steps,
+            &mut cumulative,
+            format!("Escape {}", home.name),
+            esc_home,
+            SegmentType::Escape,
+            String::new(),
+        );
+
         // Third cosmic velocity: escape the parent star system from home orbit.
         let home_sma = home_orbit.semi_major_axis;
         let home_orbit_alt = home_sma - parent.radius;
@@ -730,6 +730,17 @@ pub fn compute_route(
         );
         return steps;
     }
+
+    // Step 2: Escape home world (interplanetary missions).
+    let esc_home = escape_dv_from_low_orbit(home);
+    add_step(
+        &mut steps,
+        &mut cumulative,
+        format!("Escape {}", home.name),
+        esc_home,
+        SegmentType::Escape,
+        String::new(),
+    );
 
     let destination = destination.unwrap();
 

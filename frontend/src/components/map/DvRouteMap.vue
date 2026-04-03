@@ -44,8 +44,9 @@ interface SelectOption {
 const destOptions = ref<SelectOption[]>([])
 const moonOptions = ref<SelectOption[]>([])
 
-// Home world name for fetching its moons on mount
+// Home world name and its moon names (for route calc distinction)
 const homeWorldName = ref<string>('')
+const homeWorldMoonNames = ref<Set<string>>(new Set())
 
 onMounted(async () => {
   loadingMap.value = true
@@ -54,23 +55,31 @@ onMounted(async () => {
     const [system, dests] = await Promise.all([api.getSystem(), api.getDestinations()])
 
     destinations.value = dests
-    destOptions.value = dests.map((d) => ({
+    homeWorldName.value = system.home_world.name
+
+    // Build destination options: planets first
+    const options: SelectOption[] = dests.map((d) => ({
       label: d.body.display_name,
       value: d.body.name,
     }))
-    homeWorldName.value = system.home_world.name
 
-    // Load home world moons so they're available when no destination is selected
+    // Add home world moons to destination list
     try {
       const homeMoons = await api.getBodyMoons(system.home_world.name)
-      moons.value = homeMoons
-      moonOptions.value = homeMoons.map((m) => ({
-        label: m.body.display_name,
-        value: m.body.name,
-      }))
+      const moonNames = new Set<string>()
+      for (const m of homeMoons) {
+        options.push({
+          label: `${m.body.display_name} (${system.home_world.display_name})`,
+          value: m.body.name,
+        })
+        moonNames.add(m.body.name)
+      }
+      homeWorldMoonNames.value = moonNames
     } catch {
       // Home world may have no moons — non-fatal
     }
+
+    destOptions.value = options
 
     render(system.tree, system.root, system.home_world.name, dests)
   } catch (err) {
@@ -83,26 +92,22 @@ onMounted(async () => {
 
 watch(selectedDestination, async (name) => {
   selectedMoon.value = null
+  moonOptions.value = []
+  moons.value = []
 
-  // When no destination selected, show home world moons
-  const targetName = name || homeWorldName.value
-  if (!targetName) {
-    moonOptions.value = []
-    moons.value = []
-    return
-  }
+  // Home world moons are in the destination list, no need for moon selector
+  if (!name || homeWorldMoonNames.value.has(name)) return
 
   loadingMoons.value = true
   try {
-    const result = await api.getBodyMoons(targetName)
+    const result = await api.getBodyMoons(name)
     moons.value = result
     moonOptions.value = result.map((m) => ({
       label: m.body.display_name,
       value: m.body.name,
     }))
   } catch {
-    moonOptions.value = []
-    moons.value = []
+    // no moons
   } finally {
     loadingMoons.value = false
   }
@@ -113,9 +118,11 @@ async function calcRoute(): Promise<void> {
 
   calculating.value = true
   try {
+    // If a home world moon is selected as destination, send as moon param
+    const isHomeMoon = selectedDestination.value && homeWorldMoonNames.value.has(selectedDestination.value)
     const result: RouteResponse = await api.calcRoute({
-      destination: selectedDestination.value,
-      moon: selectedMoon.value,
+      destination: isHomeMoon ? null : selectedDestination.value,
+      moon: isHomeMoon ? selectedDestination.value : selectedMoon.value,
     })
     routeResult.value = result
     routeSteps.value = result.steps

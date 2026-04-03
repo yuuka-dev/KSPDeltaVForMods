@@ -710,12 +710,8 @@ def compute_route(
     launch = calculate_launch(home, lo_alt)
     _add("Launch to low orbit", launch.total_rocket, SegmentType.LAUNCH)
 
-    # Step 2: Escape home world.
-    esc_home = escape_dv_from_low_orbit(home)
-    _add(f"Escape {home.name}", esc_home, SegmentType.ESCAPE)
-
+    # Home world moon mission: no escape needed, just transfer within SOI.
     if destination is None and moon is not None:
-        # Home world moon mission: launch + transfer to moon + land.
         if moon.orbit is None:
             raise ValueError(f"Moon '{moon.name}' has no orbital elements.")
         moon_sma = moon.orbit.semi_major_axis
@@ -727,6 +723,10 @@ def compute_route(
         )
         _add(f"Land on {moon.name}", powered_dv_moon, SegmentType.MOON_LANDING, note=note_moon)
         return steps
+
+    # Step 2: Escape home world (interplanetary missions only).
+    esc_home = escape_dv_from_low_orbit(home)
+    _add(f"Escape {home.name}", esc_home, SegmentType.ESCAPE)
 
     if destination is None:
         # Third cosmic velocity: escape the parent star system from home orbit.
