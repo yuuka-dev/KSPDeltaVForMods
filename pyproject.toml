@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kopdeltav"
-version = "0.3.11"
+version = "0.3.12"
 description = "Delta-V calculator for KSP1 planet pack mods"
 requires-python = ">=3.10"
 license = "MIT"
