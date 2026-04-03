@@ -710,8 +710,15 @@ def compute_route(
     launch = calculate_launch(home, lo_alt)
     _add("Launch to low orbit", launch.total_rocket, SegmentType.LAUNCH)
 
-    # Home world moon mission: no escape needed, just transfer within SOI.
+    # Check if destination is a child of home world (local moon mission).
+    _is_home_child = (
+        destination is not None
+        and destination.reference_body_name == home.name
+    )
+
+    # Home world moon mission: no escape, transfer within SOI.
     if destination is None and moon is not None:
+        # Direct moon of home world
         if moon.orbit is None:
             raise ValueError(f"Moon '{moon.name}' has no orbital elements.")
         moon_sma = moon.orbit.semi_major_axis
@@ -722,6 +729,35 @@ def compute_route(
             f"aerobrake option: {aerobrake_dv_moon} m/s" if aerobrake_dv_moon is not None else ""
         )
         _add(f"Land on {moon.name}", powered_dv_moon, SegmentType.MOON_LANDING, note=note_moon)
+        return steps
+
+    if _is_home_child:
+        # Destination is a moon of home world (with optional sub-moon).
+        if destination.orbit is None:
+            raise ValueError(f"Moon '{destination.name}' has no orbital elements.")
+        dest_sma = destination.orbit.semi_major_axis
+        dest_hohmann = calculate_hohmann(home, lo_alt, dest_sma)
+        _add(f"Transfer to {destination.name}", dest_hohmann.departure_dv, SegmentType.MOON_TRANSFER)
+
+        if moon is None:
+            powered_dv, aerobrake_dv = landing_dv(destination)
+            note = f"aerobrake option: {aerobrake_dv} m/s" if aerobrake_dv is not None else ""
+            _add(f"Land on {destination.name}", powered_dv, SegmentType.MOON_LANDING, note=note)
+        else:
+            # Sub-moon of home world's moon.
+            if moon.orbit is None:
+                raise ValueError(f"Moon '{moon.name}' has no orbital elements.")
+            dest_lo = low_orbit_altitude(destination)
+            moon_sma = moon.orbit.semi_major_axis
+            moon_hohmann = calculate_hohmann(destination, dest_lo, moon_sma)
+            _add(f"Transfer to {moon.name}", moon_hohmann.departure_dv, SegmentType.MOON_TRANSFER)
+            powered_dv_moon, aerobrake_dv_moon = landing_dv(moon)
+            note_moon = (
+                f"aerobrake option: {aerobrake_dv_moon} m/s"
+                if aerobrake_dv_moon is not None
+                else ""
+            )
+            _add(f"Land on {moon.name}", powered_dv_moon, SegmentType.MOON_LANDING, note=note_moon)
         return steps
 
     # Step 2: Escape home world (interplanetary missions only).

@@ -672,7 +672,12 @@ pub fn compute_route(
         String::new(),
     );
 
-    // Home world moon mission: no escape needed, just transfer within SOI.
+    // Check if destination is a child of home world (local moon mission).
+    let is_home_child = destination
+        .map(|d| d.reference_body_name == home.name)
+        .unwrap_or(false);
+
+    // Home world moon mission (direct): destination=None, moon=Some
     if destination.is_none() {
         if let Some(moon) = moon {
             if let Some(moon_orbit) = &moon.orbit {
@@ -703,44 +708,49 @@ pub fn compute_route(
             return steps;
         }
 
-        // Step 2: Escape home world (interplanetary / third cosmic only).
+        // Third cosmic velocity.
         let esc_home = escape_dv_from_low_orbit(home);
-        add_step(
-            &mut steps,
-            &mut cumulative,
-            format!("Escape {}", home.name),
-            esc_home,
-            SegmentType::Escape,
-            String::new(),
-        );
-
-        // Third cosmic velocity: escape the parent star system from home orbit.
+        add_step(&mut steps, &mut cumulative, format!("Escape {}", home.name), esc_home, SegmentType::Escape, String::new());
         let home_sma = home_orbit.semi_major_axis;
         let home_orbit_alt = home_sma - parent.radius;
         let v_esc_star = escape_velocity(parent, home_orbit_alt);
         let v_circ_star = circular_velocity(parent, home_orbit_alt);
         let esc_star = v_esc_star - v_circ_star;
-        add_step(
-            &mut steps,
-            &mut cumulative,
-            format!("Escape {} system", parent.name),
-            esc_star,
-            SegmentType::SystemEscape,
-            String::new(),
-        );
+        add_step(&mut steps, &mut cumulative, format!("Escape {} system", parent.name), esc_star, SegmentType::SystemEscape, String::new());
         return steps;
     }
 
-    // Step 2: Escape home world (interplanetary missions).
+    // Home world moon with optional sub-moon.
+    if is_home_child {
+        let dest = destination.unwrap();
+        if let Some(dest_orbit) = &dest.orbit {
+            let dest_sma = dest_orbit.semi_major_axis;
+            let dest_hohmann = calculate_hohmann(home, lo_alt, dest_sma);
+            add_step(&mut steps, &mut cumulative, format!("Transfer to {}", dest.name), dest_hohmann.departure_dv, SegmentType::MoonTransfer, String::new());
+
+            if let Some(moon) = moon {
+                // Sub-moon of home world's moon.
+                if let Some(moon_orbit) = &moon.orbit {
+                    let dest_lo = low_orbit_altitude(dest);
+                    let moon_sma = moon_orbit.semi_major_axis;
+                    let moon_hohmann = calculate_hohmann(dest, dest_lo, moon_sma);
+                    add_step(&mut steps, &mut cumulative, format!("Transfer to {}", moon.name), moon_hohmann.departure_dv, SegmentType::MoonTransfer, String::new());
+                    let (powered_dv, aerobrake_dv) = landing_dv(moon);
+                    let note = match aerobrake_dv { Some(a) => format!("aerobrake option: {} m/s", a), None => String::new() };
+                    add_step(&mut steps, &mut cumulative, format!("Land on {}", moon.name), powered_dv, SegmentType::MoonLanding, note);
+                }
+            } else {
+                let (powered_dv, aerobrake_dv) = landing_dv(dest);
+                let note = match aerobrake_dv { Some(a) => format!("aerobrake option: {} m/s", a), None => String::new() };
+                add_step(&mut steps, &mut cumulative, format!("Land on {}", dest.name), powered_dv, SegmentType::MoonLanding, note);
+            }
+        }
+        return steps;
+    }
+
+    // Interplanetary: escape home world first.
     let esc_home = escape_dv_from_low_orbit(home);
-    add_step(
-        &mut steps,
-        &mut cumulative,
-        format!("Escape {}", home.name),
-        esc_home,
-        SegmentType::Escape,
-        String::new(),
-    );
+    add_step(&mut steps, &mut cumulative, format!("Escape {}", home.name), esc_home, SegmentType::Escape, String::new());
 
     let destination = destination.unwrap();
 

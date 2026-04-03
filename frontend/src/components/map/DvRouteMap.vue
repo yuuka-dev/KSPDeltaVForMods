@@ -94,9 +94,7 @@ watch(selectedDestination, async (name) => {
   selectedMoon.value = null
   moonOptions.value = []
   moons.value = []
-
-  // Home world moons are in the destination list, no need for moon selector
-  if (!name || homeWorldMoonNames.value.has(name)) return
+  if (!name) return
 
   loadingMoons.value = true
   try {
@@ -118,11 +116,27 @@ async function calcRoute(): Promise<void> {
 
   calculating.value = true
   try {
-    // If a home world moon is selected as destination, send as moon param
+    // Route param mapping:
+    // - Home world moon (no sub-moon): destination=null, moon=selected
+    // - Home world moon + sub-moon: destination=moon, moon=sub-moon
+    // - Planet (no moon): destination=planet, moon=null
+    // - Planet + moon: destination=planet, moon=moon
     const isHomeMoon = selectedDestination.value && homeWorldMoonNames.value.has(selectedDestination.value)
+    let destParam: string | null
+    let moonParam: string | null
+    if (isHomeMoon && selectedMoon.value) {
+      destParam = selectedDestination.value
+      moonParam = selectedMoon.value
+    } else if (isHomeMoon) {
+      destParam = null
+      moonParam = selectedDestination.value
+    } else {
+      destParam = selectedDestination.value
+      moonParam = selectedMoon.value
+    }
     const result: RouteResponse = await api.calcRoute({
-      destination: isHomeMoon ? null : selectedDestination.value,
-      moon: isHomeMoon ? selectedDestination.value : selectedMoon.value,
+      destination: destParam,
+      moon: moonParam,
     })
     routeResult.value = result
     routeSteps.value = result.steps
