@@ -57,5 +57,5 @@ jobs:
         with:
           draft: true
           name: "KSPDeltaVForMods ${{ github.ref_name }}"
-          body: "Windows desktop build. Requires Python 3.10+ on PATH."
+          body: "Windows desktop build. No external dependencies required."
           files: src-tauri/target/release/bundle/nsis/*.exe

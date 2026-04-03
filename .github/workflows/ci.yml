@@ -34,6 +34,19 @@ jobs:
       - name: Tests
         run: pytest tests/ -v
 
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Run tests
+        run: cargo test -p kopdeltav --manifest-path src-tauri/Cargo.toml
+      - name: Clippy
+        run: cargo clippy -p kopdeltav --manifest-path src-tauri/Cargo.toml -- -D warnings
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
