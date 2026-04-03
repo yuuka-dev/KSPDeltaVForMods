@@ -1,50 +1,29 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::Manager;
-use tauri_plugin_shell::ShellExt;
+use std::sync::Mutex;
+
+mod commands;
+mod state;
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            let shell = app.shell();
-
-            // In dev mode, api.py is at the project root (../../api.py from src-tauri/)
-            // In production, resources are bundled next to the exe
-            let resource_dir = app
-                .path()
-                .resource_dir()
-                .expect("Failed to resolve resource directory");
-
-            let api_path = resource_dir.join("api.py");
-
-            let (mut rx, _child) = shell
-                .command("python")
-                .args([api_path.to_string_lossy().to_string()])
-                .current_dir(&resource_dir)
-                .spawn()
-                .expect("Failed to spawn Python API server");
-
-            tauri::async_runtime::spawn(async move {
-                while let Some(event) = rx.recv().await {
-                    match event {
-                        tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
-                            println!("[python:stdout] {}", String::from_utf8_lossy(&line));
-                        }
-                        tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
-                            eprintln!("[python:stderr] {}", String::from_utf8_lossy(&line));
-                        }
-                        tauri_plugin_shell::process::CommandEvent::Terminated(status) => {
-                            eprintln!("[python] Process terminated: {:?}", status);
-                        }
-                        _ => {}
-                    }
-                }
-            });
-
-            Ok(())
-        })
+        .manage(Mutex::new(state::AppState::new()))
+        .invoke_handler(tauri::generate_handler![
+            commands::health,
+            commands::upload_config,
+            commands::scan_gamedata,
+            commands::list_bodies,
+            commands::get_body,
+            commands::calc_launch,
+            commands::calc_hohmann,
+            commands::calc_tsiolkovsky,
+            commands::get_system,
+            commands::get_destinations,
+            commands::calc_route,
+            commands::get_atmo_profile,
+            commands::get_body_moons,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
