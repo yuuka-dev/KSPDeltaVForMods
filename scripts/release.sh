@@ -98,15 +98,16 @@ SECTION="## [$VERSION] - $DATE\n"
 
 # Prepend to CHANGELOG.md
 if [ -f "$CHANGELOG" ]; then
-  # Insert after the "# Changelog" header
+  # Insert before the first "## [" version header (after preamble text)
   TEMP=$(mktemp)
   awk -v section="$(echo -e "$SECTION")" '
-    /^# Changelog/ { print; print ""; print section; next }
+    !inserted && /^## \[/ { print section; inserted=1 }
     { print }
   ' "$CHANGELOG" > "$TEMP"
   mv "$TEMP" "$CHANGELOG"
 else
-  echo -e "# Changelog\n\n${SECTION}" > "$CHANGELOG"
+  printf "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),\nand this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n" > "$CHANGELOG"
+  echo -e "$SECTION" >> "$CHANGELOG"
 fi
 
 echo "Updated $CHANGELOG"
