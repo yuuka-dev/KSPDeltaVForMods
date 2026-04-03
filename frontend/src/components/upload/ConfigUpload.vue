@@ -30,7 +30,8 @@ async function onFileSelect(event: FileUploadSelectEvent): Promise<void> {
 
   uploading.value = true
   try {
-    const uploadResult = await api.uploadConfig(file)
+    const fileContent = await file.text()
+    const uploadResult = await api.uploadConfig(fileContent)
     await afterSuccess(uploadResult.count)
   } catch (err) {
     toast.add({

@@ -42,15 +42,6 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
 
-      - name: Copy Python backend into Tauri resources
-        run: |
-          mkdir -p src-tauri/resources/kopdeltav
-          cp api.py src-tauri/resources/
-          cp launcher.py src-tauri/resources/
-          cp kopdeltav/*.py src-tauri/resources/kopdeltav/
-          cp requirements.txt src-tauri/resources/
-        shell: bash
-
       - name: Build Tauri app
         run: cargo tauri build --bundles nsis
         working-directory: src-tauri
@@ -66,5 +57,5 @@ jobs:
         with:
           draft: true
           name: "KSPDeltaVForMods ${{ github.ref_name }}"
-          body: "Windows desktop build.\n\n**Requirements:**\n- Python 3.10+\n- `pip install fastapi uvicorn[standard] python-multipart`"
+          body: "Windows desktop build. No external dependencies required."
           files: src-tauri/target/release/bundle/nsis/*.exe
