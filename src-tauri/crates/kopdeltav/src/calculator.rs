@@ -17,15 +17,15 @@ use crate::models::{hermite_interp, CelestialBody, G0, R_GAS};
 
 /// Fraction of orbital velocity attributed to gravity loss, scaled by surface gravity.
 /// Calibrated against KSP flight data; accuracy ~10%.
-const GRAVITY_LOSS_COEFF: f64 = 0.15;
+const GRAVITY_LOSS_COEFF: f64 = 0.35;
 
 /// Fraction of orbital velocity attributed to atmospheric drag loss,
 /// scaled by surface density relative to Earth.
-const DRAG_LOSS_COEFF: f64 = 0.05;
+const DRAG_LOSS_COEFF: f64 = 0.13;
 
 /// Fraction of orbital velocity saved by air-breathing (jet) engines in the lower atmosphere.
 /// Capped when density ratio >= 1.0.
-const JET_SAVINGS_COEFF: f64 = 0.44;
+const JET_SAVINGS_COEFF: f64 = 0.39;
 
 /// Earth sea-level atmospheric density [kg/m^3], used as reference for empirical scaling.
 const EARTH_RHO_SEA_LEVEL: f64 = 1.225;
@@ -983,13 +983,13 @@ mod tests {
         let alt = low_orbit_altitude(&body);
         let result = calculate_launch(&body, alt);
         assert!(
-            (result.total_rocket - 3110.0).abs() / 3110.0 < 0.02,
-            "Expected total_rocket ~3110, got {}",
+            (result.total_rocket - 3891.0).abs() / 3891.0 < 0.02,
+            "Expected total_rocket ~3891, got {}",
             result.total_rocket
         );
         assert!(
-            (result.total_with_jets - 1982.0).abs() / 1982.0 < 0.02,
-            "Expected total_with_jets ~1982, got {}",
+            (result.total_with_jets - 2899.0).abs() / 2899.0 < 0.02,
+            "Expected total_with_jets ~2899, got {}",
             result.total_with_jets
         );
     }

@@ -198,8 +198,8 @@ class TestCalcLaunch:
         assert resp.status_code == 200
         data = resp.json()
         assert math.isclose(data["orbital_velocity"], 2541.1, rel_tol=1e-3)
-        assert math.isclose(data["total_rocket"], 3110.0, rel_tol=0.05)
-        assert math.isclose(data["total_with_jets"], 1982.0, rel_tol=0.05)
+        assert math.isclose(data["total_rocket"], 3891.0, rel_tol=0.05)
+        assert math.isclose(data["total_with_jets"], 2899.0, rel_tol=0.05)
 
     def test_consistency(self) -> None:
         _upload_sanctar()

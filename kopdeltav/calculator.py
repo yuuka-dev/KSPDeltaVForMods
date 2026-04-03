@@ -42,9 +42,9 @@ _EARTH_RHO_SEA_LEVEL: float = 1.225
 # Empirical coefficients for launch ΔV estimation.
 # Calibrated against KSP flight experience; accuracy ≈ ±10%.
 # ---------------------------------------------------------------------------
-_GRAVITY_LOSS_COEFF: float = 0.15  # fraction of v_orbital, scaled by gee_asl
-_DRAG_LOSS_COEFF: float = 0.05  # fraction of v_orbital, scaled by rho/rho_earth
-_JET_SAVINGS_COEFF: float = 0.44  # fraction of v_orbital saved by jet engines
+_GRAVITY_LOSS_COEFF: float = 0.35  # fraction of v_orbital, scaled by gee_asl
+_DRAG_LOSS_COEFF: float = 0.13  # fraction of v_orbital, scaled by rho/rho_earth
+_JET_SAVINGS_COEFF: float = 0.39  # fraction of v_orbital saved by jet engines
 
 
 # ---------------------------------------------------------------------------

@@ -196,14 +196,14 @@ class TestDensityAtAltitude:
 
 class TestCalculateLaunch:
     def test_sanctar_reference_values(self) -> None:
-        """Regression: Sanctar launch ΔV ≈ 3110 (rocket), ≈ 1982 (jets)."""
+        """Regression: Sanctar launch ΔV ≈ 3891 (rocket), ≈ 2899 (jets)."""
         sanctar = _make_sanctar()
         r = calculate_launch(sanctar, 80_000.0)
 
         assert math.isclose(r.orbital_velocity, 2541.1, rel_tol=1e-3)
         assert math.isclose(r.total_ideal, r.orbital_velocity, rel_tol=1e-9)
-        assert math.isclose(r.total_rocket, 3110.0, rel_tol=0.05)
-        assert math.isclose(r.total_with_jets, 1982.0, rel_tol=0.05)
+        assert math.isclose(r.total_rocket, 3891.0, rel_tol=0.05)
+        assert math.isclose(r.total_with_jets, 2899.0, rel_tol=0.05)
 
     def test_losses_positive_with_atmosphere(self) -> None:
         sanctar = _make_sanctar()
