@@ -16,6 +16,9 @@ venv/
 # Claude Code
 .claude/
 
+# Worktrees
+.worktrees/
+
 # Environment
 .env
 .env.*
