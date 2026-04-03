@@ -1,3 +1,6 @@
+[workspace]
+members = ["crates/kopdeltav"]
+
 [package]
 name = "kspdeltavformods"
 version = "0.1.0"
@@ -7,6 +10,7 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+kopdeltav = { path = "crates/kopdeltav" }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
